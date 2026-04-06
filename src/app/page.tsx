@@ -37,14 +37,10 @@ import {
 type RequestStatus = "Publicado" | "Denegado" | "En Proceso" | "Planeando" | "Pendiente";
 
 // ─── Credenciales del sistema ───
-const DESIGNER_USERS: Record<string, string> = {
-  "Juan David": "Juan David",
-  "Eliana": "Eliana",
-  "Verónica": "Verónica",
-  "Caleb": "Caleb",
-};
-const ADMIN_CREDS = { user: "Trafficker", pass: "trafficker2024" };
-const CM_CREDS = { user: "Community", pass: "cm2024" };
+const DESIGNER_USERS = ["Juan David", "Eliana", "Verónica", "Caleb"];
+const PASS_TRAFFICKER = "angel2026";
+const PASS_GENERAL = "ganaplay2026"; // CM y diseñadores
+
 type RequestPriority = "Bajo" | "Medio" | "Alto";
 
 type Creative = {
@@ -91,11 +87,12 @@ export default function GanaPlayMainApp() {
   const [userName, setUserName] = useState<string>("");
   const [requests, setRequests] = useState<RequestType[]>([]);
 
-  // Login form state
-  const [loginSection, setLoginSection] = useState<"main" | "admin" | "cm" | "designer">("main");
-  const [loginUser, setLoginUser] = useState("");
+  // Login state
+  const [loginRole, setLoginRole] = useState<"admin"|"cm"|"designer"|null>(null);
+  const [loginDesignerName, setLoginDesignerName] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [loginSection, setLoginSection] = useState<"main"|"admin"|"cm"|"designer">("main");
   
   // Board State
   const [activeTab, setActiveTab] = useState('Tablero Kanban');
@@ -165,18 +162,26 @@ export default function GanaPlayMainApp() {
 
   useEffect(() => {
     const curr = new Date();
-    // Start from current day or previous Monday? User wants "more days". Let's show 14 days starting from today.
+    // Find the last Monday (or today if it's Monday)
+    const todayDow = curr.getDay(); // 0=Sun, 1=Mon...
+    const diffToMonday = todayDow === 0 ? -6 : 1 - todayDow;
+    const monday = new Date(curr);
+    monday.setDate(curr.getDate() + diffToMonday);
+    // Generate 14 days starting from that Monday (Mon-Sun, Mon-Sun)
     const days = [];
     for (let i = 0; i < 14; i++) {
-        const d = new Date(curr);
-        d.setDate(curr.getDate() + i);
-        days.push({
-            dateStr: d.toISOString().split('T')[0],
-            dayName: d.toLocaleDateString('es-ES', { weekday: 'short' }),
-            dayNum: d.getDate()
-        });
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      days.push({
+        dateStr: d.toISOString().split('T')[0],
+        dayName: d.toLocaleDateString('es-ES', { weekday: 'long' }),
+        dayNum: d.getDate(),
+        monthName: d.toLocaleDateString('es-ES', { month: 'short' }),
+        isToday: d.toISOString().split('T')[0] === curr.toISOString().split('T')[0],
+        isMonday: d.getDay() === 1,
+      });
     }
-    setWeekDays(days);
+    setWeekDays(days as any);
     setDeliveryDate(curr.toISOString().split('T')[0]);
   }, []);
 
@@ -386,83 +391,112 @@ export default function GanaPlayMainApp() {
 
   const handleAdminLogin = () => {
     setLoginError("");
-    if (loginUser === ADMIN_CREDS.user && loginPass === ADMIN_CREDS.pass) {
-      setRole("admin"); setUserName("Trafficker Admin");
-    } else if (loginUser === CM_CREDS.user && loginPass === CM_CREDS.pass) {
+    if (loginPass === PASS_TRAFFICKER) {
+      setRole("admin"); setUserName("Trafficker");
+    } else {
+      setLoginError("❌ Contraseña incorrecta.");
+    }
+  };
+
+  const handleCmLogin = () => {
+    setLoginError("");
+    if (loginPass === PASS_GENERAL) {
       setRole("cm"); setUserName("Community Manager");
     } else {
-      setLoginError("Usuario o contraseña incorrectos.");
+      setLoginError("❌ Contraseña incorrecta.");
     }
   };
 
   const handleDesignerLogin = () => {
     setLoginError("");
-    const validPass = DESIGNER_USERS[loginUser];
-    if (validPass && validPass === loginPass) {
-      setRole("designer"); setUserName(loginUser);
+    if (!loginDesignerName) { setLoginError("Selecciona tu nombre."); return; }
+    if (loginPass === PASS_GENERAL) {
+      setRole("designer"); setUserName(loginDesignerName);
     } else {
-      setLoginError("Usuario o contraseña incorrectos.");
+      setLoginError("❌ Contraseña incorrecta.");
     }
   };
 
   const handleLogout = () => {
-    setRole(null); setUserName(""); setLoginUser(""); setLoginPass("");
-    setLoginError(""); setLoginSection("main"); setActiveTab('Tablero Kanban');
+    setRole(null); setUserName(""); setLoginPass(""); setLoginDesignerName("");
+    setLoginError(""); setLoginSection("main"); setLoginRole(null); setActiveTab('Tablero Kanban');
   };
 
   if (!role) {
-    const inputStyle = { marginBottom: '12px' };
-    const sectionBg = { border: '1px solid var(--border-color)', borderRadius: '16px', padding: '24px', background: 'rgba(0,0,0,0.35)', marginTop: '16px' };
+    const ROLE_CARDS = [
+      { key: 'admin', icon: '🔵', label: 'Trafficker', sub: 'Gestión y supervisión', color: '#22c55e', glow: 'rgba(34,197,94,0.3)' },
+      { key: 'cm',    icon: '🟣', label: 'Community Manager', sub: 'Redes y contenido', color: '#a855f7', glow: 'rgba(168,85,247,0.3)' },
+      { key: 'designer', icon: '🎨', label: 'Diseñador', sub: 'Equipo creativo', color: '#D000FF', glow: 'rgba(208,0,255,0.3)' },
+    ];
+    const selectedCard = ROLE_CARDS.find(c => c.key === loginRole);
     return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
-        <div className="glass-panel" style={{ padding: "50px", textAlign: "center", maxWidth: "480px", width: "100%" }}>
-          <img src="/logo.png" alt="GanaPlay Logo" style={{ height: "70px", marginBottom: "16px", display: "inline-block" }} />
-          <h1 style={{ marginBottom: "6px", color: "var(--text-primary)", fontSize: "28px" }}>GanaPlay Diseño</h1>
-          <p style={{ color: "var(--text-secondary)", marginBottom: "30px", fontSize: "14px" }}>Plataforma v5.0 — Selecciona tu perfil</p>
+      <div style={{ display:'flex', justifyContent:'center', alignItems:'center', minHeight:'100vh', padding:'20px' }}>
+        <div style={{ width:'100%', maxWidth:'520px' }}>
+          {/* Logo & title */}
+          <div style={{ textAlign:'center', marginBottom:'36px' }}>
+            <img src="/logo.png" alt="GanaPlay" style={{ height:'70px', marginBottom:'14px' }} />
+            <h1 style={{ fontSize:'26px', margin:'0 0 6px', color:'var(--text-primary)', letterSpacing:'0.5px' }}>GanaPlay Diseño</h1>
+            <p style={{ color:'var(--text-secondary)', fontSize:'13px', margin:0 }}>Selecciona tu perfil para continuar</p>
+          </div>
 
-          {loginSection === "main" && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <button className="btn" style={{ width: "100%", padding: "16px", fontSize: "15px" }} onClick={() => { setLoginSection("admin"); setLoginError(""); setLoginUser(""); setLoginPass(""); }}>
-                <User size={20} /> Trafficker / Supervisor
-              </button>
-              <button className="btn btn-secondary" style={{ width: "100%", padding: "16px", fontSize: "15px" }} onClick={() => { setLoginSection("cm"); setLoginError(""); setLoginUser(""); setLoginPass(""); }}>
-                <MessageSquare size={20} /> Community Manager
-              </button>
-              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '4px' }}>
-                <button className="btn btn-secondary" style={{ width: "100%", padding: "16px", fontSize: "15px", borderColor: '#D000FF', color: '#D000FF' }} onClick={() => { setLoginSection("designer"); setLoginError(""); setLoginUser(""); setLoginPass(""); }}>
-                  <FileImage size={20} /> Equipo de Diseño
-                </button>
+          {/* Role cards grid */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'12px', marginBottom: loginRole ? '20px' : '0' }}>
+            {ROLE_CARDS.map(card => (
+              <div key={card.key}
+                onClick={() => { setLoginRole(card.key as any); setLoginPass(''); setLoginDesignerName(''); setLoginError(''); }}
+                style={{
+                  background: loginRole === card.key ? `${card.color}18` : 'rgba(0,0,0,0.4)',
+                  border: `2px solid ${loginRole === card.key ? card.color : 'rgba(255,255,255,0.08)'}`,
+                  borderRadius:'16px', padding:'20px 12px', cursor:'pointer', textAlign:'center',
+                  transition:'all 0.25s ease',
+                  boxShadow: loginRole === card.key ? `0 0 20px ${card.glow}` : 'none',
+                  transform: loginRole === card.key ? 'translateY(-3px)' : 'none',
+                }}
+              >
+                <div style={{ fontSize:'28px', marginBottom:'8px' }}>{card.icon}</div>
+                <div style={{ fontWeight:700, fontSize:'13px', color: loginRole === card.key ? card.color : 'var(--text-primary)', lineHeight:1.2 }}>{card.label}</div>
+                <div style={{ fontSize:'10px', color:'var(--text-secondary)', marginTop:'4px' }}>{card.sub}</div>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
 
-          {(loginSection === "admin" || loginSection === "cm") && (
-            <div style={sectionBg}>
-              <p style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-color)', marginBottom: '16px', textTransform: 'uppercase' }}>
-                {loginSection === "admin" ? "🔐 Acceso Trafficker / Supervisor" : "🔐 Acceso Community Manager"}
+          {/* Login form (inline, below cards) */}
+          {loginRole && (
+            <div className="glass-panel" style={{ padding:'24px', border:`1px solid ${selectedCard!.color}44` }}>
+              <p style={{ fontSize:'12px', fontWeight:700, color: selectedCard!.color, marginBottom:'16px', textTransform:'uppercase', letterSpacing:'1px' }}>
+                {selectedCard!.icon} Ingresar como {selectedCard!.label}
               </p>
-              <input type="text" placeholder="Usuario" value={loginUser} onChange={e => setLoginUser(e.target.value)} style={inputStyle} />
-              <input type="password" placeholder="Contraseña" value={loginPass} onChange={e => setLoginPass(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} style={inputStyle} />
-              {loginError && <p style={{ color: 'var(--danger)', fontSize: '13px', marginBottom: '12px' }}>{loginError}</p>}
-              <button className="btn" style={{ width: '100%', marginBottom: '10px' }} onClick={handleAdminLogin}>Ingresar</button>
-              <button className="btn btn-secondary" style={{ width: '100%', fontSize: '12px' }} onClick={() => setLoginSection("main")}>← Volver</button>
-            </div>
-          )}
 
-          {loginSection === "designer" && (
-            <div style={sectionBg}>
-              <p style={{ fontSize: '13px', fontWeight: 700, color: '#D000FF', marginBottom: '8px', textTransform: 'uppercase' }}>🎨 Acceso Equipo Diseño</p>
-              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '16px' }}>Juan David · Eliana · Verónica · Caleb</p>
-              <select value={loginUser} onChange={e => setLoginUser(e.target.value)} style={{ ...inputStyle, marginBottom: '12px' }}>
-                <option value="">Selecciona tu nombre...</option>
-                {Object.keys(DESIGNER_USERS).map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
-              <input type="password" placeholder="Contraseña (tu nombre)" value={loginPass} onChange={e => setLoginPass(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleDesignerLogin()} style={inputStyle} />
-              {loginError && <p style={{ color: 'var(--danger)', fontSize: '13px', marginBottom: '12px' }}>{loginError}</p>}
-              <button className="btn" style={{ width: '100%', marginBottom: '10px', background: 'linear-gradient(135deg, #9333ea, #7c3aed)', border: 'none' }} onClick={handleDesignerLogin}>Entrar al Estudio</button>
-              <button className="btn btn-secondary" style={{ width: '100%', fontSize: '12px' }} onClick={() => setLoginSection("main")}>← Volver</button>
+              {loginRole === 'designer' && (
+                <select value={loginDesignerName} onChange={e => setLoginDesignerName(e.target.value)}
+                  style={{ marginBottom:'12px', background:'rgba(0,0,0,0.5)', border:`1px solid ${selectedCard!.color}66` }}>
+                  <option value="">— Selecciona tu nombre —</option>
+                  {DESIGNER_USERS.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              )}
+
+              <input type="password" placeholder="Contraseña"
+                value={loginPass} onChange={e => setLoginPass(e.target.value)}
+                style={{ marginBottom:'12px', background:'rgba(0,0,0,0.5)', border:`1px solid ${selectedCard!.color}66` }}
+                onKeyDown={e => {
+                  if (e.key !== 'Enter') return;
+                  if (loginRole === 'admin') handleAdminLogin();
+                  else if (loginRole === 'cm') handleCmLogin();
+                  else handleDesignerLogin();
+                }}
+              />
+
+              {loginError && <p style={{ color:'var(--danger)', fontSize:'12px', marginBottom:'12px', textAlign:'center' }}>{loginError}</p>}
+
+              <button className="btn" style={{ width:'100%', background:`linear-gradient(135deg, ${selectedCard!.color}, ${selectedCard!.color}aa)`, border:'none', padding:'14px' }}
+                onClick={() => {
+                  if (loginRole === 'admin') handleAdminLogin();
+                  else if (loginRole === 'cm') handleCmLogin();
+                  else handleDesignerLogin();
+                }}
+              >
+                Ingresar
+              </button>
             </div>
           )}
         </div>
@@ -471,57 +505,66 @@ export default function GanaPlayMainApp() {
   }
 
   return (
-    <div className="app-container" style={{ gridTemplateColumns: "1fr", position: 'relative' }}>
+    <div style={{ maxWidth:'1500px', margin:'0 auto', padding:'20px 16px' }}>
       
-      <div className="header">
-        <div className="header-brand">
-          <img src="/logo.png" alt="GanaPlay Logo" style={{ height: "60px" }} />
-          <h1 style={{ display: "flex", alignItems: "center", gap: "10px", margin: 0, fontSize: "28px", letterSpacing: "0.5px" }}>
-             GanaPlay Diseño
-             <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 400 }}>
-               | {role === 'admin' ? '🔵 Trafficker' : role === 'cm' ? '🟣 Community Manager' : `🎨 Diseñador: ${userName}`}
-             </span>
-          </h1>
+      {/* STICKY HEADER */}
+      <div style={{
+        display:'flex', justifyContent:'space-between', alignItems:'center',
+        marginBottom:'24px', paddingBottom:'16px', borderBottom:'1px solid rgba(255,255,255,0.06)',
+        position:'sticky', top:0, zIndex:50, background:'var(--bg-color)', backdropFilter:'blur(20px)', paddingTop:'8px'
+      }}>
+        {/* Brand */}
+        <div style={{ display:'flex', alignItems:'center', gap:'12px', minWidth:0 }}>
+          <img src="/logo.png" alt="GanaPlay" style={{ height:'44px', flexShrink:0 }} />
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontWeight:800, fontSize:'18px', color:'var(--text-primary)', whiteSpace:'nowrap' }}>GanaPlay Diseño</div>
+            <div style={{ fontSize:'11px', color:'var(--text-secondary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              {role === 'admin' ? '🔵 Trafficker' : role === 'cm' ? '🟣 Community Manager' : `🎨 ${userName}`}
+            </div>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button className="btn btn-secondary" style={{ padding: "10px 16px", fontSize: '13px' }} onClick={handleLogout}>
-            <User size={14} /> Cambiar Perfil
+        {/* Header Actions */}
+        <div style={{ display:'flex', gap:'8px', alignItems:'center', flexShrink:0 }}>
+          <button title="Nuevo Requerimiento" className="btn" style={{ padding:'9px 14px', fontSize:'13px' }}
+            onClick={() => setCreateModalOpen(true)}
+            hidden={role === 'designer'}
+          >
+            <Plus size={16} /> <span style={{ display:'none' }} className="btn-label">Nuevo</span>
           </button>
-          <button className="btn btn-secondary" style={{ padding: "10px 16px", fontSize: '13px', borderColor: '#ef4444', color: '#ef4444' }} onClick={handleLogout}>
-            <LogOut size={14} /> Cerrar Sesión
+          <button title="Cerrar sesión" className="btn btn-secondary"
+            style={{ padding:'9px 14px', fontSize:'13px', borderColor:'#ef4444', color:'#ef4444' }}
+            onClick={handleLogout}
+          >
+            <LogOut size={16} />
           </button>
         </div>
       </div>
-
-      <div className="glass-panel" style={{ padding: "40px" }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
-          <h2 style={{ fontSize: '32px', margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <CalendarDays color="var(--accent-color)" size={32} /> Solicitudes de artes
+      <div style={{ background:'rgba(10,20,15,0.7)', backdropFilter:'blur(20px)', border:'1px solid var(--border-color)', borderRadius:'20px', padding:'28px' }}>
+        {/* Section header */}
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px' }}>
+          <h2 style={{ fontSize:'24px', margin:0, display:'flex', alignItems:'center', gap:'10px' }}>
+            <CalendarDays color="var(--accent-color)" size={26} /> Solicitudes de artes
           </h2>
-          {(role === 'admin' || role === 'cm') && (
-            <button className="btn" onClick={() => setCreateModalOpen(true)}>
-              <Plus size={18} /> Nuevo Requerimiento
-            </button>
-          )}
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', borderBottom: '1px solid var(--border-color)', paddingBottom: '20px' }}>
-          <div style={navItemStyle(activeTab === 'Tablero Kanban')} onClick={() => setActiveTab('Tablero Kanban')}><Calendar size={16} /> Planeación</div>
-          <div style={navItemStyle(activeTab === 'Calendario Entrega')} onClick={() => setActiveTab('Calendario Entrega')}><Layout size={16} /> Calendario Entrega</div>
+        {/* NAV TABS */}
+        <div style={{ display:'flex', gap:'8px', marginBottom:'24px', borderBottom:'1px solid var(--border-color)', paddingBottom:'16px', flexWrap:'wrap' }}>
+          <div style={navItemStyle(activeTab === 'Tablero Kanban')} onClick={() => setActiveTab('Tablero Kanban')}><Calendar size={15} /> Planeación</div>
+          <div style={navItemStyle(activeTab === 'Calendario Entrega')} onClick={() => setActiveTab('Calendario Entrega')}><Layout size={15} /> Por Estado</div>
           {(role === 'admin' || role === 'cm') && (
-            <div style={{ ...navItemStyle(activeTab === 'Pendientes'), position: 'relative' }} onClick={() => setActiveTab('Pendientes')}>
-              <AlertCircle size={16} /> Pendientes
+            <div style={{ ...navItemStyle(activeTab === 'Pendientes'), position:'relative' }} onClick={() => setActiveTab('Pendientes')}>
+              <AlertCircle size={15} /> Pendientes
               {requests.filter(r => r.status === 'Pendiente').length > 0 && (
-                <span style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#f87171', color: '#fff', borderRadius: '50%', width: '18px', height: '18px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                <span style={{ position:'absolute', top:'-5px', right:'-5px', background:'#f87171', color:'#fff', borderRadius:'50%', width:'16px', height:'16px', fontSize:'9px', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700 }}>
                   {requests.filter(r => r.status === 'Pendiente').length}
                 </span>
               )}
             </div>
           )}
           {role === 'designer' && (
-            <div style={navItemStyle(activeTab === 'Equipo Diseño')} onClick={() => setActiveTab('Equipo Diseño')}><MessageSquare size={16} /> Workspace Equipo</div>
+            <div style={navItemStyle(activeTab === 'Equipo Diseño')} onClick={() => setActiveTab('Equipo Diseño')}><MessageSquare size={15} /> Workspace</div>
           )}
-          <div style={navItemStyle(activeTab === 'Historial')} onClick={() => setActiveTab('Historial')}><Clock size={16} /> Historial</div>
+          <div style={navItemStyle(activeTab === 'Historial')} onClick={() => setActiveTab('Historial')}><Clock size={15} /> Historial</div>
         </div>
 
         {/* CALENDARIO ENTREGA VIEW (Columnas por estado como en captura) */}
@@ -599,73 +642,80 @@ export default function GanaPlayMainApp() {
           </div>
         )}
 
-        {/* KANBAN VIEW (Semanaly Planning) */}
-        {activeTab === 'Tablero Kanban' && (
-          <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '16px', background: 'rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(14, 200px)', borderBottom: '1px solid var(--border-color)', background: 'rgba(34, 197, 94, 0.05)' }}>
-              {weekDays.map(d => (
-                <div key={d.dateStr} style={{ padding: '16px 12px', textAlign: 'center', fontSize: '12px', color: 'var(--accent-color)', fontWeight: 800, textTransform: 'uppercase', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
-                  {d.dayName} {d.dayNum}
+        {/* KANBAN VERTICAL - Planeación (lunes a lunes scroll vertical) */}
+        {activeTab === 'Tablero Kanban' && (() => {
+          // Group 14 days into 2 weeks
+          const week1 = weekDays.slice(0, 7);
+          const week2 = weekDays.slice(7, 14);
+          const DAY_COLORS: Record<number,string> = { 0:'rgba(255,255,255,0.02)', 1:'rgba(34,197,94,0.04)', 2:'rgba(34,197,94,0.02)', 3:'rgba(255,255,255,0.02)', 4:'rgba(255,255,255,0.03)', 5:'rgba(208,0,255,0.02)', 6:'rgba(255,61,0,0.02)' };
+          const todayStr = new Date().toISOString().split('T')[0];
+          const renderWeek = (days: any[]) => (
+            <div style={{ border:'1px solid var(--border-color)', borderRadius:'14px', overflow:'hidden', marginBottom:'20px' }}>
+              {/* Week header */}
+              <div style={{ display:'grid', gridTemplateColumns:'130px repeat(7, 1fr)', background:'rgba(34,197,94,0.06)', borderBottom:'1px solid var(--border-color)' }}>
+                <div style={{ padding:'12px 16px', fontSize:'11px', fontWeight:800, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'1px', display:'flex', alignItems:'center' }}>
+                  {days[0]?.monthName?.toUpperCase()} {new Date(days[0]?.dateStr).getFullYear()}
                 </div>
-              ))}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(14, 200px)', minHeight: '600px' }}>
-              {weekDays.map((d, i) => {
-                const dayCards = requests.filter(req => req.deliveryDate === d.dateStr);
+                {days.map((d:any) => (
+                  <div key={d.dateStr} style={{
+                    padding:'12px 8px', textAlign:'center', borderLeft:'1px solid rgba(255,255,255,0.04)',
+                    background: d.isToday ? 'rgba(34,197,94,0.15)' : 'transparent'
+                  }}>
+                    <div style={{ fontSize:'10px', fontWeight:700, color: d.isToday ? 'var(--accent-color)' : 'var(--text-secondary)', textTransform:'uppercase' }}>{d.dayName.slice(0,3)}</div>
+                    <div style={{ fontSize:'18px', fontWeight:800, color: d.isToday ? 'var(--accent-color)' : 'var(--text-primary)', lineHeight:1.2 }}>{d.dayNum}</div>
+                    {d.isToday && <div style={{ fontSize:'8px', color:'var(--accent-color)', fontWeight:900, letterSpacing:'1px' }}>HOY</div>}
+                  </div>
+                ))}
+              </div>
+              {/* Request rows by status group */}
+              {(['Pendiente','Planeando','En Proceso','Publicado','Denegado'] as RequestStatus[]).map(status => {
+                const rowCards = days.map((d:any) => ({ day: d, cards: requests.filter(r => r.deliveryDate === d.dateStr && r.status === status) }));
+                const hasAny = rowCards.some(x => x.cards.length > 0);
+                if (!hasAny) return null;
                 return (
-                  <div key={d.dateStr} style={{ borderRight: '1px solid var(--border-color)', padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', background: i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
-                    <div style={{ textAlign: 'right', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 700, paddingBottom: '10px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between' }}>
-                      {(role === 'admin' || role === 'cm') ? (
-                        <span onClick={() => { setDeliveryDate(d.dateStr); setCreateModalOpen(true); }} style={{ color: 'var(--accent-color)', cursor:'pointer' }}><Plus size={14}/></span>
-                      ) : <span></span>}
-                      {d.dateStr === new Date().toISOString().split('T')[0] ? 'HOY' : ''}
+                  <div key={status} style={{ display:'grid', gridTemplateColumns:'130px repeat(7, 1fr)', borderTop:'1px solid rgba(255,255,255,0.04)' }}>
+                    <div style={{ padding:'12px 14px', display:'flex', alignItems:'flex-start', borderRight:'1px solid rgba(255,255,255,0.04)', paddingTop:'14px' }}>
+                      <span style={{ padding:'3px 8px', fontSize:'9px', fontWeight:800, textTransform:'uppercase', background:STATUS_COLORS[status], color:STATUS_TEXT_COLORS[status], borderRadius:'6px', border:`1px solid ${STATUS_TEXT_COLORS[status]}`, whiteSpace:'nowrap' }}>{status}</span>
                     </div>
-                    {dayCards.map(c => (
-                      <div key={c.id} className="request-card" 
-                        style={{ 
-                          padding: '12px', 
-                          borderRadius: '10px', 
-                          background: 'rgba(0,0,0,0.7)', 
-                          cursor: 'pointer', 
-                          borderLeft: `4px solid ${priorityConfig[c.priority ?? 'Medio'].text}`,
-                          borderBottom: `2px solid ${STATUS_TEXT_COLORS[c.status]}`,
-                          boxShadow: `0 4px 15px -5px ${STATUS_TEXT_COLORS[c.status]}44`,
-                          position: 'relative',
-                          transition: 'all 0.3s ease'
-                        }} 
-                        onClick={() => { setSelectedReq(c); setModalOpen(true); }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = 'translateY(-3px)';
-                          e.currentTarget.style.boxShadow = `0 10px 20px -5px ${STATUS_TEXT_COLORS[c.status]}66`;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'translateY(0)';
-                          e.currentTarget.style.boxShadow = `0 4px 15px -5px ${STATUS_TEXT_COLORS[c.status]}44`;
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--accent-color)' }}>{c.id}</div>
-                          {c.priority === 'Alto' && <AlertCircle size={10} color="#FF3D00" />}
-                        </div>
-                        <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--text-primary)', lineHeight: 1.2 }}>{c.title}</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
-                          <span style={{ padding: '2px 5px', fontSize: '8px', background: STATUS_COLORS[c.status], color: STATUS_TEXT_COLORS[c.status], borderRadius: '4px', fontWeight: 'bold', textTransform: 'uppercase', border: `1px solid ${STATUS_TEXT_COLORS[c.status]}` }}>
-                            {c.status}
-                          </span>
-                        </div>
-                        {c.assignedTo && (
-                          <div style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '5px', background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px', width: 'fit-content' }}>
-                            <User size={10} color="var(--accent-color)" /> {c.assignedTo.split(' ')[0]}
+                    {rowCards.map(({day, cards}: any) => (
+                      <div key={day.dateStr} style={{ borderLeft:'1px solid rgba(255,255,255,0.03)', padding:'8px', minHeight:'60px', background: day.isToday ? 'rgba(34,197,94,0.04)' : 'transparent', display:'flex', flexDirection:'column', gap:'6px' }}>
+                        {cards.map((c:any) => (
+                          <div key={c.id}
+                            style={{ padding:'8px 10px', borderRadius:'8px', background:'rgba(0,0,0,0.6)', cursor:'pointer', borderLeft:`3px solid ${STATUS_TEXT_COLORS[c.status]}`, fontSize:'11px', fontWeight:600, color:'var(--text-primary)', lineHeight:1.3, transition:'all 0.2s' }}
+                            onClick={() => { setSelectedReq(c); setModalOpen(true); }}
+                            onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow=`0 6px 15px ${STATUS_TEXT_COLORS[c.status]}33`; }}
+                            onMouseLeave={e => { e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='none'; }}
+                          >
+                            <div style={{ color:'var(--accent-color)', fontSize:'9px', fontWeight:800, marginBottom:'2px' }}>{c.id}</div>
+                            <div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'100%' }}>{c.title}</div>
+                            {c.priority === 'Alto' && <div style={{ fontSize:'8px', color:'#FF3D00', fontWeight:700, marginTop:'2px' }}>⚡ ALTA</div>}
+                            {(role === 'admin' || role === 'cm') && <div style={{ fontSize:'9px', color:'var(--accent-color)', marginTop:'2px', cursor:'pointer', opacity:0.8 }} onClick={e => { e.stopPropagation(); setDeliveryDate(day.dateStr); setCreateModalOpen(true); }}></div>}
                           </div>
+                        ))}
+                        {(role === 'admin' || role === 'cm') && cards.length === 0 && (
+                          <div title="Agregar solicitud en este día" style={{ opacity:0.3, cursor:'pointer', textAlign:'center', fontSize:'16px' }}
+                            onClick={() => { setDeliveryDate(day.dateStr); setCreateModalOpen(true); }}>+</div>
                         )}
                       </div>
                     ))}
                   </div>
                 );
               })}
+              {/* Empty state */}
+              {days.every((d:any) => requests.filter(r => r.deliveryDate === d.dateStr).length === 0) && (
+                <div style={{ padding:'24px', textAlign:'center', color:'var(--text-secondary)', fontSize:'13px', borderTop:'1px solid rgba(255,255,255,0.04)' }}>Sin solicitudes esta semana</div>
+              )}
             </div>
-          </div>
-        )}
+          );
+          return (
+            <div>
+              <div style={{ fontSize:'12px', color:'var(--text-secondary)', marginBottom:'12px', textTransform:'uppercase', fontWeight:700, letterSpacing:'1px' }}>📅 Semana 1</div>
+              {renderWeek(week1)}
+              <div style={{ fontSize:'12px', color:'var(--text-secondary)', marginBottom:'12px', textTransform:'uppercase', fontWeight:700, letterSpacing:'1px' }}>📅 Semana 2</div>
+              {renderWeek(week2)}
+            </div>
+          );
+        })()}
 
         {/* EQUIPO DISEÑO VIEW */}
         {activeTab === 'Equipo Diseño' && role === 'designer' && (
