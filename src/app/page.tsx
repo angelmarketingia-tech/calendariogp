@@ -4,19 +4,19 @@ import React, { useState, ChangeEvent, useEffect, useRef, useMemo, useCallback }
 
 // ─── Constantes fuera del componente para evitar recrearlas en cada render ───
 const STATUS_COLORS: Record<string, string> = {
-  "Publicado": "rgba(34, 197, 94, 0.2)",
-  "Denegado": "rgba(239, 68, 68, 0.2)",
-  "En Proceso": "rgba(59, 130, 246, 0.2)",
-  "Planeando": "rgba(168, 85, 247, 0.2)",
-  "Pendiente": "rgba(245, 158, 11, 0.2)",
+  "Publicado": "rgba(0, 255, 148, 0.15)",
+  "Denegado": "rgba(255, 61, 0, 0.15)",
+  "En Proceso": "rgba(0, 163, 255, 0.15)",
+  "Planeando": "rgba(208, 0, 255, 0.15)",
+  "Pendiente": "rgba(255, 184, 0, 0.15)",
 };
 
 const STATUS_TEXT_COLORS: Record<string, string> = {
-  "Publicado": "#4ade80",
-  "Denegado": "#f87171",
-  "En Proceso": "#60a5fa",
-  "Planeando": "#c084fc",
-  "Pendiente": "#fbbf24",
+  "Publicado": "#00FF94",
+  "Denegado": "#FF3D00",
+  "En Proceso": "#00A3FF",
+  "Planeando": "#D000FF",
+  "Pendiente": "#FFB800",
 };
 
 const PRIORITY_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
@@ -35,6 +35,16 @@ import {
 } from 'lucide-react';
 
 type RequestStatus = "Publicado" | "Denegado" | "En Proceso" | "Planeando" | "Pendiente";
+
+// ─── Credenciales del sistema ───
+const DESIGNER_USERS: Record<string, string> = {
+  "Juan David": "Juan David",
+  "Eliana": "Eliana",
+  "Verónica": "Verónica",
+  "Caleb": "Caleb",
+};
+const ADMIN_CREDS = { user: "Trafficker", pass: "trafficker2024" };
+const CM_CREDS = { user: "Community", pass: "cm2024" };
 type RequestPriority = "Bajo" | "Medio" | "Alto";
 
 type Creative = {
@@ -60,8 +70,15 @@ type RequestType = {
   status: RequestStatus;
   priority: RequestPriority;
   referenceImage?: string;
+  assignedTo?: string;
   creatives: Creative[];
   comments?: number;
+};
+
+type DesignerChatMsg = {
+  sender: string;
+  text: string;
+  time: string;
 };
 
 type ChatMessage = {
@@ -70,8 +87,15 @@ type ChatMessage = {
 };
 
 export default function GanaPlayMainApp() {
-  const [role, setRole] = useState<"admin" | "designer" | null>(null);
+  const [role, setRole] = useState<"admin" | "cm" | "designer" | null>(null);
+  const [userName, setUserName] = useState<string>("");
   const [requests, setRequests] = useState<RequestType[]>([]);
+
+  // Login form state
+  const [loginSection, setLoginSection] = useState<"main" | "admin" | "cm" | "designer">("main");
+  const [loginUser, setLoginUser] = useState("");
+  const [loginPass, setLoginPass] = useState("");
+  const [loginError, setLoginError] = useState("");
   
   // Board State
   const [activeTab, setActiveTab] = useState('Tablero Kanban');
@@ -98,7 +122,13 @@ export default function GanaPlayMainApp() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatImage, setChatImage] = useState<string | null>(null);
+  
+  // Designer Team Chat State
+  const [teamChatContent, setTeamChatContent] = useState<DesignerChatMsg[]>([]);
+  const [teamInput, setTeamInput] = useState("");
+
   const scrollRef = useRef<HTMLDivElement>(null);
+  const teamChatRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
 
   // History/filter state
@@ -113,8 +143,16 @@ export default function GanaPlayMainApp() {
     try {
       const saved = localStorage.getItem('ganaplay_requests');
       if (saved) setRequests(JSON.parse(saved));
+      
+      const savedChat = localStorage.getItem('ganaplay_team_chat');
+      if (savedChat) setTeamChatContent(JSON.parse(savedChat));
     } catch (_) {}
   }, []);
+
+  // Save team chat
+  useEffect(() => {
+    localStorage.setItem('ganaplay_team_chat', JSON.stringify(teamChatContent));
+  }, [teamChatContent]);
 
   // Save requests to localStorage whenever they change (skip initial render)
   useEffect(() => {
@@ -127,13 +165,11 @@ export default function GanaPlayMainApp() {
 
   useEffect(() => {
     const curr = new Date();
-    const day = curr.getDay() || 7; 
-    const monday = new Date(curr);
-    monday.setDate(curr.getDate() - (day - 1));
+    // Start from current day or previous Monday? User wants "more days". Let's show 14 days starting from today.
     const days = [];
-    for (let i = 0; i < 7; i++) {
-        const d = new Date(monday);
-        d.setDate(monday.getDate() + i);
+    for (let i = 0; i < 14; i++) {
+        const d = new Date(curr);
+        d.setDate(curr.getDate() + i);
         days.push({
             dateStr: d.toISOString().split('T')[0],
             dayName: d.toLocaleDateString('es-ES', { weekday: 'short' }),
@@ -149,6 +185,12 @@ export default function GanaPlayMainApp() {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (teamChatRef.current) {
+      teamChatRef.current.scrollTop = teamChatRef.current.scrollHeight;
+    }
+  }, [teamChatContent]);
 
   const toggleSelection = (setter: React.Dispatch<React.SetStateAction<string[]>>, list: string[], val: string) => {
     if (list.includes(val)) setter(list.filter(item => item !== val));
@@ -209,10 +251,28 @@ export default function GanaPlayMainApp() {
   };
 
   const handleChangeStatus = (e: ChangeEvent<HTMLSelectElement>) => {
-    if(!selectedReq) return;
+    if(!selectedReq || role !== 'designer') return;
     const updated = { ...selectedReq, status: e.target.value as RequestStatus };
     setRequests(requests.map(r => r.id === updated.id ? updated : r));
     setSelectedReq(updated);
+  };
+
+  const handleAssignToMe = (req: RequestType) => {
+    if (role !== 'designer') return;
+    const updated = { ...req, assignedTo: userName };
+    setRequests(requests.map(r => r.id === updated.id ? updated : r));
+    if (selectedReq?.id === req.id) setSelectedReq(updated);
+  };
+
+  const sendTeamMessage = () => {
+    if (!teamInput.trim()) return;
+    const newMsg: DesignerChatMsg = {
+      sender: userName,
+      text: teamInput,
+      time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+    };
+    setTeamChatContent([...teamChatContent, newMsg]);
+    setTeamInput("");
   };
 
   const handleDesignerUpload = async (e: ChangeEvent<HTMLInputElement>, type: string) => {
@@ -324,19 +384,87 @@ export default function GanaPlayMainApp() {
     textTransform: 'uppercase' as 'uppercase', letterSpacing: '1px', fontSize: '13px'
   });
 
+  const handleAdminLogin = () => {
+    setLoginError("");
+    if (loginUser === ADMIN_CREDS.user && loginPass === ADMIN_CREDS.pass) {
+      setRole("admin"); setUserName("Trafficker Admin");
+    } else if (loginUser === CM_CREDS.user && loginPass === CM_CREDS.pass) {
+      setRole("cm"); setUserName("Community Manager");
+    } else {
+      setLoginError("Usuario o contraseña incorrectos.");
+    }
+  };
+
+  const handleDesignerLogin = () => {
+    setLoginError("");
+    const validPass = DESIGNER_USERS[loginUser];
+    if (validPass && validPass === loginPass) {
+      setRole("designer"); setUserName(loginUser);
+    } else {
+      setLoginError("Usuario o contraseña incorrectos.");
+    }
+  };
+
+  const handleLogout = () => {
+    setRole(null); setUserName(""); setLoginUser(""); setLoginPass("");
+    setLoginError(""); setLoginSection("main"); setActiveTab('Tablero Kanban');
+  };
+
   if (!role) {
+    const inputStyle = { marginBottom: '12px' };
+    const sectionBg = { border: '1px solid var(--border-color)', borderRadius: '16px', padding: '24px', background: 'rgba(0,0,0,0.35)', marginTop: '16px' };
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
-        <div className="glass-panel" style={{ padding: "60px", textAlign: "center", maxWidth: "500px", width: "100%" }}>
-          <img src="/logo.png" alt="GanaPlay Logo" style={{ height: "80px", marginBottom: "20px", display: "inline-block" }} />
-          <h1 style={{ marginBottom: "10px", color: "var(--text-primary)", fontSize: "32px", letterSpacing: "1px" }}>GanaPlay Diseño</h1>
-          <p style={{ color: "var(--text-secondary)", marginBottom: "40px", fontSize: "16px" }}>Plataforma Kanban v4.0</p>
-          <button className="btn" style={{ width: "100%", marginBottom: "16px", padding: "16px", fontSize: "16px" }} onClick={() => setRole("admin")}>
-            <User size={22} /> Entrar como Trafficker
-          </button>
-          <button className="btn btn-secondary" style={{ width: "100%", padding: "16px", fontSize: "16px" }} onClick={() => setRole("designer")}>
-            <FileImage size={22} /> Entrar como Diseñador
-          </button>
+        <div className="glass-panel" style={{ padding: "50px", textAlign: "center", maxWidth: "480px", width: "100%" }}>
+          <img src="/logo.png" alt="GanaPlay Logo" style={{ height: "70px", marginBottom: "16px", display: "inline-block" }} />
+          <h1 style={{ marginBottom: "6px", color: "var(--text-primary)", fontSize: "28px" }}>GanaPlay Diseño</h1>
+          <p style={{ color: "var(--text-secondary)", marginBottom: "30px", fontSize: "14px" }}>Plataforma v5.0 — Selecciona tu perfil</p>
+
+          {loginSection === "main" && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <button className="btn" style={{ width: "100%", padding: "16px", fontSize: "15px" }} onClick={() => { setLoginSection("admin"); setLoginError(""); setLoginUser(""); setLoginPass(""); }}>
+                <User size={20} /> Trafficker / Supervisor
+              </button>
+              <button className="btn btn-secondary" style={{ width: "100%", padding: "16px", fontSize: "15px" }} onClick={() => { setLoginSection("cm"); setLoginError(""); setLoginUser(""); setLoginPass(""); }}>
+                <MessageSquare size={20} /> Community Manager
+              </button>
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '4px' }}>
+                <button className="btn btn-secondary" style={{ width: "100%", padding: "16px", fontSize: "15px", borderColor: '#D000FF', color: '#D000FF' }} onClick={() => { setLoginSection("designer"); setLoginError(""); setLoginUser(""); setLoginPass(""); }}>
+                  <FileImage size={20} /> Equipo de Diseño
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(loginSection === "admin" || loginSection === "cm") && (
+            <div style={sectionBg}>
+              <p style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-color)', marginBottom: '16px', textTransform: 'uppercase' }}>
+                {loginSection === "admin" ? "🔐 Acceso Trafficker / Supervisor" : "🔐 Acceso Community Manager"}
+              </p>
+              <input type="text" placeholder="Usuario" value={loginUser} onChange={e => setLoginUser(e.target.value)} style={inputStyle} />
+              <input type="password" placeholder="Contraseña" value={loginPass} onChange={e => setLoginPass(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} style={inputStyle} />
+              {loginError && <p style={{ color: 'var(--danger)', fontSize: '13px', marginBottom: '12px' }}>{loginError}</p>}
+              <button className="btn" style={{ width: '100%', marginBottom: '10px' }} onClick={handleAdminLogin}>Ingresar</button>
+              <button className="btn btn-secondary" style={{ width: '100%', fontSize: '12px' }} onClick={() => setLoginSection("main")}>← Volver</button>
+            </div>
+          )}
+
+          {loginSection === "designer" && (
+            <div style={sectionBg}>
+              <p style={{ fontSize: '13px', fontWeight: 700, color: '#D000FF', marginBottom: '8px', textTransform: 'uppercase' }}>🎨 Acceso Equipo Diseño</p>
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '16px' }}>Juan David · Eliana · Verónica · Caleb</p>
+              <select value={loginUser} onChange={e => setLoginUser(e.target.value)} style={{ ...inputStyle, marginBottom: '12px' }}>
+                <option value="">Selecciona tu nombre...</option>
+                {Object.keys(DESIGNER_USERS).map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+              <input type="password" placeholder="Contraseña (tu nombre)" value={loginPass} onChange={e => setLoginPass(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleDesignerLogin()} style={inputStyle} />
+              {loginError && <p style={{ color: 'var(--danger)', fontSize: '13px', marginBottom: '12px' }}>{loginError}</p>}
+              <button className="btn" style={{ width: '100%', marginBottom: '10px', background: 'linear-gradient(135deg, #9333ea, #7c3aed)', border: 'none' }} onClick={handleDesignerLogin}>Entrar al Estudio</button>
+              <button className="btn btn-secondary" style={{ width: '100%', fontSize: '12px' }} onClick={() => setLoginSection("main")}>← Volver</button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -349,20 +477,28 @@ export default function GanaPlayMainApp() {
         <div className="header-brand">
           <img src="/logo.png" alt="GanaPlay Logo" style={{ height: "60px" }} />
           <h1 style={{ display: "flex", alignItems: "center", gap: "10px", margin: 0, fontSize: "28px", letterSpacing: "0.5px" }}>
-             GanaPlay Diseño <span style={{ fontSize: "14px", color: "var(--text-secondary)", fontWeight: 400, transform: "translateY(2px)" }}>| {role === 'admin' ? 'Trafficker' : 'Diseñador'}</span>
+             GanaPlay Diseño
+             <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 400 }}>
+               | {role === 'admin' ? '🔵 Trafficker' : role === 'cm' ? '🟣 Community Manager' : `🎨 Diseñador: ${userName}`}
+             </span>
           </h1>
         </div>
-        <button className="btn btn-secondary" style={{ padding: "10px 20px" }} onClick={() => { setRole(null); setActiveTab('Tablero Kanban'); }}>
-          <LogOut size={16} /> Salir
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button className="btn btn-secondary" style={{ padding: "10px 16px", fontSize: '13px' }} onClick={handleLogout}>
+            <User size={14} /> Cambiar Perfil
+          </button>
+          <button className="btn btn-secondary" style={{ padding: "10px 16px", fontSize: '13px', borderColor: '#ef4444', color: '#ef4444' }} onClick={handleLogout}>
+            <LogOut size={14} /> Cerrar Sesión
+          </button>
+        </div>
       </div>
 
       <div className="glass-panel" style={{ padding: "40px" }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
           <h2 style={{ fontSize: '32px', margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <CalendarDays color="var(--accent-color)" size={32} /> Central de Pautas
+              <CalendarDays color="var(--accent-color)" size={32} /> Solicitudes de artes
           </h2>
-          {role === 'admin' && (
+          {(role === 'admin' || role === 'cm') && (
             <button className="btn" onClick={() => setCreateModalOpen(true)}>
               <Plus size={18} /> Nuevo Requerimiento
             </button>
@@ -370,8 +506,9 @@ export default function GanaPlayMainApp() {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', borderBottom: '1px solid var(--border-color)', paddingBottom: '20px' }}>
-          <div style={navItemStyle(activeTab === 'Tablero Kanban')} onClick={() => setActiveTab('Tablero Kanban')}><Calendar size={16} /> Kanban Semanal</div>
-          {role === 'admin' && (
+          <div style={navItemStyle(activeTab === 'Tablero Kanban')} onClick={() => setActiveTab('Tablero Kanban')}><Calendar size={16} /> Planeación</div>
+          <div style={navItemStyle(activeTab === 'Calendario Entrega')} onClick={() => setActiveTab('Calendario Entrega')}><Layout size={16} /> Calendario Entrega</div>
+          {(role === 'admin' || role === 'cm') && (
             <div style={{ ...navItemStyle(activeTab === 'Pendientes'), position: 'relative' }} onClick={() => setActiveTab('Pendientes')}>
               <AlertCircle size={16} /> Pendientes
               {requests.filter(r => r.status === 'Pendiente').length > 0 && (
@@ -381,38 +518,146 @@ export default function GanaPlayMainApp() {
               )}
             </div>
           )}
+          {role === 'designer' && (
+            <div style={navItemStyle(activeTab === 'Equipo Diseño')} onClick={() => setActiveTab('Equipo Diseño')}><MessageSquare size={16} /> Workspace Equipo</div>
+          )}
           <div style={navItemStyle(activeTab === 'Historial')} onClick={() => setActiveTab('Historial')}><Clock size={16} /> Historial</div>
         </div>
 
-        {/* KANBAN VIEW */}
+        {/* CALENDARIO ENTREGA VIEW (Columnas por estado como en captura) */}
+        {activeTab === 'Calendario Entrega' && (
+          <div style={{ display: 'flex', gap: '20px', overflowX: 'auto', paddingBottom: '20px', minHeight: '70vh', alignItems: 'flex-start' }}>
+            {[
+              { id: 'Denegado', title: 'Declined', color: '#FF3D00', bg: 'rgba(255, 61, 0, 0.05)' },
+              { id: 'Pendiente', title: 'Backlog / Draft', color: '#FFB800', bg: 'rgba(255, 184, 0, 0.05)' },
+              { id: 'Planeando', title: 'Planning', color: '#D000FF', bg: 'rgba(208, 0, 255, 0.05)' },
+              { id: 'En Proceso', title: 'In Progress', color: '#00A3FF', bg: 'rgba(0, 163, 255, 0.05)' },
+              { id: 'Publicado', title: 'Posted', color: '#00FF94', bg: 'rgba(0, 255, 148, 0.05)' }
+            ].map(col => {
+              const colCards = requests.filter(req => req.status === col.id);
+              return (
+                <div key={col.id} style={{ minWidth: '320px', width: '320px', background: col.bg, borderRadius: '16px', padding: '16px', border: `1px solid ${col.color}33`, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  
+                  {/* Column Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 12px', background: `${col.color}20`, borderRadius: '20px', width: 'fit-content' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: col.color }}></div>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{col.title} <span style={{ color: col.color, marginLeft: '6px' }}>{colCards.length}</span></span>
+                  </div>
+
+                  {/* Add new button specifically for Draft/Backlog column as shown in mockup, functionality opens standard modal */}
+                  {(role === 'admin' || role === 'cm') && col.id === 'Pendiente' && (
+                    <div 
+                      style={{ cursor: 'pointer', padding: '12px 16px', borderRadius: '12px', border: '1px dashed var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-color)', fontSize: '14px', background: 'rgba(0,0,0,0.3)' }}
+                      onClick={() => setCreateModalOpen(true)}
+                    >
+                      <Plus size={16} /> Nueva solicitud
+                    </div>
+                  )}
+
+                  {/* Column Cards */}
+                  {colCards.map(c => (
+                    <div key={c.id} className="request-card" 
+                      style={{ 
+                        padding: '16px', 
+                        margin: 0, 
+                        borderRadius: '12px', 
+                        background: 'rgba(0,0,0,0.6)', 
+                        border: '1px solid rgba(255,255,255,0.05)', 
+                        borderLeft: `4px solid ${priorityConfig[c.priority ?? 'Medio'].text}`,
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                        transition: 'all 0.2s ease',
+                      }} 
+                      onClick={() => { setSelectedReq(c); setModalOpen(true); }}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-3px)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                        <FileText size={18} color="var(--text-secondary)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                          <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                            {c.id} {c.title}
+                          </span>
+                          
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                              {c.deliveryDate}
+                            </div>
+                            {c.comments ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                <MessageSquare size={12} /> {c.comments}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* KANBAN VIEW (Semanaly Planning) */}
         {activeTab === 'Tablero Kanban' && (
-          <div style={{ border: '1px solid var(--border-color)', borderRadius: '16px', overflow: 'hidden', background: 'rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--border-color)', background: 'rgba(34, 197, 94, 0.05)' }}>
+          <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '16px', background: 'rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(14, 200px)', borderBottom: '1px solid var(--border-color)', background: 'rgba(34, 197, 94, 0.05)' }}>
               {weekDays.map(d => (
-                <div key={d.dateStr} style={{ padding: '16px 12px', textAlign: 'center', fontSize: '14px', color: 'var(--accent-color)', fontWeight: 800, textTransform: 'uppercase' }}>
-                  {d.dayName}
+                <div key={d.dateStr} style={{ padding: '16px 12px', textAlign: 'center', fontSize: '12px', color: 'var(--accent-color)', fontWeight: 800, textTransform: 'uppercase', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
+                  {d.dayName} {d.dayNum}
                 </div>
               ))}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', minHeight: '600px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(14, 200px)', minHeight: '600px' }}>
               {weekDays.map((d, i) => {
                 const dayCards = requests.filter(req => req.deliveryDate === d.dateStr);
                 return (
-                  <div key={d.dateStr} style={{ borderRight: i === 6 ? 'none' : '1px solid var(--border-color)', padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ textAlign: 'right', fontSize: '16px', color: 'var(--text-secondary)', fontWeight: 700, paddingBottom: '10px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      {role === 'admin' && <span onClick={() => { setDeliveryDate(d.dateStr); setCreateModalOpen(true); }} style={{float:'left', color: 'var(--accent-color)', cursor:'pointer'}}><Plus size={16}/></span>}
-                      {d.dayNum}
+                  <div key={d.dateStr} style={{ borderRight: '1px solid var(--border-color)', padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', background: i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
+                    <div style={{ textAlign: 'right', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 700, paddingBottom: '10px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between' }}>
+                      {(role === 'admin' || role === 'cm') ? (
+                        <span onClick={() => { setDeliveryDate(d.dateStr); setCreateModalOpen(true); }} style={{ color: 'var(--accent-color)', cursor:'pointer' }}><Plus size={14}/></span>
+                      ) : <span></span>}
+                      {d.dateStr === new Date().toISOString().split('T')[0] ? 'HOY' : ''}
                     </div>
                     {dayCards.map(c => (
-                      <div key={c.id} className="request-card" style={{ padding: '16px', borderRadius: '12px', background: 'rgba(0,0,0,0.5)', cursor: 'pointer', borderLeft: `3px solid ${priorityConfig[c.priority ?? 'Medio'].text}` }} onClick={() => { setSelectedReq(c); setModalOpen(true); }}>
+                      <div key={c.id} className="request-card" 
+                        style={{ 
+                          padding: '12px', 
+                          borderRadius: '10px', 
+                          background: 'rgba(0,0,0,0.7)', 
+                          cursor: 'pointer', 
+                          borderLeft: `4px solid ${priorityConfig[c.priority ?? 'Medio'].text}`,
+                          borderBottom: `2px solid ${STATUS_TEXT_COLORS[c.status]}`,
+                          boxShadow: `0 4px 15px -5px ${STATUS_TEXT_COLORS[c.status]}44`,
+                          position: 'relative',
+                          transition: 'all 0.3s ease'
+                        }} 
+                        onClick={() => { setSelectedReq(c); setModalOpen(true); }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-3px)';
+                          e.currentTarget.style.boxShadow = `0 10px 20px -5px ${STATUS_TEXT_COLORS[c.status]}66`;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = `0 4px 15px -5px ${STATUS_TEXT_COLORS[c.status]}44`;
+                        }}
+                      >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent-color)' }}>{c.id}</div>
-                          <span style={{ fontSize: '9px', fontWeight: 700, color: priorityConfig[c.priority ?? 'Medio'].text, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{c.priority ?? 'Medio'}</span>
+                          <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--accent-color)' }}>{c.id}</div>
+                          {c.priority === 'Alto' && <AlertCircle size={10} color="#FF3D00" />}
                         </div>
-                        <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '12px', color: 'var(--text-primary)' }}>{c.title}</div>
-                        <span style={{ padding: '4px 8px', fontSize: '10px', background: STATUS_COLORS[c.status], color: STATUS_TEXT_COLORS[c.status], borderRadius: '6px', fontWeight: 'bold', textTransform: 'uppercase', border: `1px solid ${STATUS_TEXT_COLORS[c.status]}` }}>
-                          {c.status}
-                        </span>
+                        <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--text-primary)', lineHeight: 1.2 }}>{c.title}</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+                          <span style={{ padding: '2px 5px', fontSize: '8px', background: STATUS_COLORS[c.status], color: STATUS_TEXT_COLORS[c.status], borderRadius: '4px', fontWeight: 'bold', textTransform: 'uppercase', border: `1px solid ${STATUS_TEXT_COLORS[c.status]}` }}>
+                            {c.status}
+                          </span>
+                        </div>
+                        {c.assignedTo && (
+                          <div style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '5px', background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px', width: 'fit-content' }}>
+                            <User size={10} color="var(--accent-color)" /> {c.assignedTo.split(' ')[0]}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -422,49 +667,66 @@ export default function GanaPlayMainApp() {
           </div>
         )}
 
-        {/* PENDIENTES VIEW (admin only) */}
-        {activeTab === 'Pendientes' && role === 'admin' && (() => {
-          const pending = requests.filter(r => r.status === 'Pendiente');
-          return (
-            <div>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '14px' }}>
-                {pending.length} solicitud{pending.length !== 1 ? 'es' : ''} esperando atención.
-              </p>
-              {pending.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-secondary)' }}>
-                  <CheckCircle2 size={48} style={{ opacity: 0.3, marginBottom: '12px' }} />
-                  <p>Sin solicitudes pendientes.</p>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {pending.map(req => (
-                    <div key={req.id} className="request-card" style={{ padding: '20px 24px', borderRadius: '14px', background: 'rgba(0,0,0,0.5)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(245,158,11,0.3)', borderLeft: `4px solid ${priorityConfig[req.priority ?? 'Medio'].text}` }}
-                      onClick={() => { setSelectedReq(req); setModalOpen(true); }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-color)' }}>{req.id}</span>
-                          <span style={{ padding: '3px 8px', fontSize: '10px', background: STATUS_COLORS['Pendiente'], color: STATUS_TEXT_COLORS['Pendiente'], borderRadius: '6px', fontWeight: 'bold', textTransform: 'uppercase', border: `1px solid ${STATUS_TEXT_COLORS['Pendiente']}` }}>Pendiente</span>
-                          <span style={{ padding: '3px 8px', fontSize: '10px', background: priorityConfig[req.priority ?? 'Medio'].bg, color: priorityConfig[req.priority ?? 'Medio'].text, borderRadius: '6px', fontWeight: 'bold', textTransform: 'uppercase', border: `1px solid ${priorityConfig[req.priority ?? 'Medio'].text}` }}>{req.priority ?? 'Medio'}</span>
-                        </div>
-                        <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>{req.title}</div>
-                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{req.copy}</div>
-                        <div style={{ marginTop: '8px', display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          <span><Globe size={12} style={{ display:'inline', marginRight:'4px' }} />{req.countries.join(', ')}</span>
-                          <span><FileType size={12} style={{ display:'inline', marginRight:'4px' }} />{req.dimensions.join(' · ')}</span>
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', color: 'var(--text-secondary)', marginLeft: '20px', flexShrink: 0 }}>
-                        <div style={{ fontWeight: 600, color: '#fbbf24' }}>Entrega</div>
-                        <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>{req.deliveryDate}</div>
-                        <ChevronRight size={20} style={{ marginTop: '10px', color: 'var(--accent-color)' }} />
+        {/* EQUIPO DISEÑO VIEW */}
+        {activeTab === 'Equipo Diseño' && role === 'designer' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px' }}>
+            <div className="glass-panel" style={{ padding: '30px', background: 'rgba(0,0,0,0.4)' }}>
+              <h3 style={{ marginBottom: '20px', color: 'var(--accent-color)' }}>Solicitudes Activas</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {requests.filter(r => r.status !== 'Publicado').map(req => (
+                  <div key={req.id} style={{ background: 'rgba(0,0,0,0.4)', padding: '20px', borderRadius: '15px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '5px' }}>{req.id} • {req.deliveryDate}</div>
+                      <div style={{ fontSize: '16px', fontWeight: 700 }}>{req.title}</div>
+                      <div style={{ marginTop: '10px' }}>
+                        <span style={{ padding: '3px 8px', fontSize: '10px', background: STATUS_COLORS[req.status], color: STATUS_TEXT_COLORS[req.status], borderRadius: '6px', fontWeight: 'bold', textTransform: 'uppercase', border: `1px solid ${STATUS_TEXT_COLORS[req.status]}` }}>{req.status}</span>
+                        {req.assignedTo && <span style={{ marginLeft: '10px', fontSize: '11px', color: 'var(--accent-color)' }}><User size={10} style={{ display:'inline', marginRight:'4px' }} />Asignado a: {req.assignedTo}</span>}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      {!req.assignedTo && (
+                        <button className="btn btn-secondary" style={{ padding: '8px 15px', fontSize: '12px' }} onClick={() => handleAssignToMe(req)}>
+                          Asignarme
+                        </button>
+                      )}
+                      <button className="btn" style={{ padding: '8px 15px', fontSize: '12px' }} onClick={() => { setSelectedReq(req); setModalOpen(true); }}>
+                        Ver Detalles
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          );
-        })()}
+
+            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '600px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--accent-color)' }}>
+              <div style={{ padding: '15px', borderBottom: '1px solid var(--border-color)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <MessageSquare size={18} color="var(--accent-color)" /> Chat de Equipo
+              </div>
+              <div ref={teamChatRef} style={{ flexGrow: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {teamChatContent.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'center', marginTop: '20px' }}>No hay mensajes aún. ¡Saluda a tu equipo!</p>}
+                {teamChatContent.map((m, i) => (
+                  <div key={i} style={{ alignSelf: m.sender === userName ? 'flex-end' : 'flex-start', maxWidth: '90%' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '4px', textAlign: m.sender === userName ? 'right' : 'left' }}>{m.sender} • {m.time}</div>
+                    <div style={{ background: m.sender === userName ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.05)', padding: '10px 14px', borderRadius: '12px', border: m.sender === userName ? '1px solid var(--accent-color)' : '1px solid rgba(255,255,255,0.1)', fontSize: '13px' }}>
+                      {m.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: '15px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '10px' }}>
+                <input 
+                  type="text" 
+                  value={teamInput} 
+                  onChange={(e) => setTeamInput(e.target.value)} 
+                  onKeyDown={(e) => e.key === 'Enter' && sendTeamMessage()}
+                  placeholder="Mensaje al equipo..." 
+                  style={{ fontSize: '13px', padding: '10px' }}
+                />
+                <button className="btn" style={{ padding: '10px' }} onClick={sendTeamMessage}><Send size={16} /></button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* HISTORIAL VIEW */}
         {activeTab === 'Historial' && (() => {
@@ -669,16 +931,35 @@ export default function GanaPlayMainApp() {
 
             <div style={{ padding: '40px' }}>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap' }}>
-                <select value={selectedReq.status} onChange={handleChangeStatus} style={{ background: STATUS_COLORS[selectedReq.status], color: STATUS_TEXT_COLORS[selectedReq.status], fontWeight: 'bold', padding: '10px', borderRadius: '8px' }}>
-                  {["Publicado", "Denegado", "En Proceso", "Planeando", "Pendiente"].map(st => <option key={st} value={st}>{st}</option>)}
-                </select>
-                {role === 'admin' ? (
+                {role === 'designer' ? (
+                  <select value={selectedReq.status} onChange={handleChangeStatus} style={{ background: STATUS_COLORS[selectedReq.status], color: STATUS_TEXT_COLORS[selectedReq.status], fontWeight: 'bold', padding: '10px', borderRadius: '8px', border: `1px solid ${STATUS_TEXT_COLORS[selectedReq.status]}`, cursor: 'pointer' }}>
+                    {["Publicado", "Denegado", "En Proceso", "Planeando", "Pendiente"].map(st => <option key={st} value={st} style={{ background: '#000', color: '#fff' }}>{st}</option>)}
+                  </select>
+                ) : (
+                  <span style={{ padding: '10px 20px', borderRadius: '8px', background: STATUS_COLORS[selectedReq.status], color: STATUS_TEXT_COLORS[selectedReq.status], fontWeight: 700, border: `1px solid ${STATUS_TEXT_COLORS[selectedReq.status]}`, fontSize: '14px' }}>
+                    Estado: {selectedReq.status}
+                  </span>
+                )}
+
+                {(role === 'admin' || role === 'cm') ? (
                   <select value={selectedReq.priority ?? 'Medio'} onChange={handleChangePriority} style={{ background: priorityConfig[selectedReq.priority ?? 'Medio'].bg, color: priorityConfig[selectedReq.priority ?? 'Medio'].text, fontWeight: 'bold', padding: '10px', borderRadius: '8px', border: `1px solid ${priorityConfig[selectedReq.priority ?? 'Medio'].text}` }}>
                     {(["Bajo", "Medio", "Alto"] as RequestPriority[]).map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 ) : (
                   <span style={{ padding: '8px 14px', borderRadius: '8px', background: priorityConfig[selectedReq.priority ?? 'Medio'].bg, color: priorityConfig[selectedReq.priority ?? 'Medio'].text, fontWeight: 700, border: `1px solid ${priorityConfig[selectedReq.priority ?? 'Medio'].text}`, fontSize: '14px' }}>
                     Prioridad: {selectedReq.priority ?? 'Medio'}
+                  </span>
+                )}
+
+                {role === 'designer' && !selectedReq.assignedTo && (
+                  <button className="btn" onClick={() => handleAssignToMe(selectedReq)} style={{ padding: '10px 20px' }}>
+                    Asignarme esta solicitud
+                  </button>
+                )}
+                {selectedReq.assignedTo && (
+                  <span style={{ fontSize: '14px', color: 'var(--accent-color)', fontWeight: 600 }}>
+                    <User size={14} style={{ display: 'inline', marginRight: '6px' }} />
+                    Encargado: {selectedReq.assignedTo}
                   </span>
                 )}
               </div>
