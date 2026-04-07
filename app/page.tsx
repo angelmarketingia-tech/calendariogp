@@ -288,10 +288,10 @@ export default function GanaPlayMainApp() {
       countries: countries,
       requestDate: new Date().toISOString().split("T")[0],
       deliveryDate: deliveryDate,
-      ...(format === 'post' && postPublishDate ? { postPublishDate } : {}),
       status: "Pendiente",
       priority: priority,
-      referenceImage: referenceImg,
+      // Firestore no acepta undefined — usar null o excluir el campo
+      ...(referenceImg ? { referenceImage: referenceImg } : {}),
       creatives: [],
       comments: 0
     };
@@ -1415,7 +1415,28 @@ export default function GanaPlayMainApp() {
                 </div>
                 <div className="form-group"><label className="label">Copy / Instrucción Principal</label><textarea rows={3} value={copyStr} onChange={(e) => setCopyStr(e.target.value)} required /></div>
                 <div className="form-group"><label className="label">Países Destino</label><div style={{ display: 'flex', gap: '15px' }}>{["El Salvador", "Guatemala"].map(country => (<label key={country} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(0,0,0,0.4)', padding: '10px 16px', borderRadius: '10px', border: countries.includes(country) ? '1px solid var(--accent-color)' : '1px solid rgba(255,255,255,0.1)' }}><input type="checkbox" checked={countries.includes(country)} onChange={() => toggleSelection(setCountries, countries, country)} style={{ width: 'auto', padding: 0 }} />{country}</label>))}</div></div>
-                <div className="form-group"><label className="label">Dimensiones (Se activarán en la subida)</label><div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px' }}>{["1080x1080", "Historia", "General"].map(dim => (<label key={dim} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(0,0,0,0.4)', padding: '10px 16px', borderRadius: '10px', border: dimensions.includes(dim) ? '1px solid var(--accent-color)' : '1px solid rgba(255,255,255,0.1)' }}><input type="checkbox" checked={dimensions.includes(dim)} onChange={() => toggleSelection(setDimensions, dimensions, dim)} style={{ width: 'auto', padding: 0 }} />{dim}</label>))}</div></div>
+                <div className="form-group">
+                  <label className="label">Dimensiones (Se activarán en la subida)</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                    {[
+                      { key: "1080x1080",  label: "1080×1080",     sub: "Feed cuadrado" },
+                      { key: "Historia",   label: "Historia",       sub: "9:16 vertical" },
+                      { key: "General",    label: "General",        sub: "Formato libre" },
+                      { key: "Banner Web", label: "Banner Web",     sub: "728×90" },
+                      { key: "Display",    label: "Display",        sub: "300×250" },
+                      { key: "Hero Web",   label: "Hero Web",       sub: "1920×1080" },
+                      { key: "Half Page",  label: "Half Page",      sub: "300×600" },
+                    ].map(({ key, label, sub }) => (
+                      <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: '2px', cursor: 'pointer', background: 'rgba(0,0,0,0.4)', padding: '10px 14px', borderRadius: '10px', border: dimensions.includes(key) ? '1px solid var(--accent-color)' : '1px solid rgba(255,255,255,0.1)', minWidth: '110px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <input type="checkbox" checked={dimensions.includes(key)} onChange={() => toggleSelection(setDimensions, dimensions, key)} style={{ width: 'auto', padding: 0 }} />
+                          <span style={{ fontWeight: 700, fontSize: '13px' }}>{label}</span>
+                        </div>
+                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>{sub}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 <div className="form-group">
                   <label className="label">Prioridad</label>
                   <div style={{ display: 'flex', gap: '12px' }}>
@@ -1470,9 +1491,12 @@ export default function GanaPlayMainApp() {
                     <label className="label">Tipo / Formato</label>
                     <select value={format} onChange={(e) => setFormat(e.target.value)}>
                       <option value="static">🖼️ Estático</option>
-                      <option value="post">📲 Post (Redes)</option>
                       <option value="video">🎬 Video</option>
                       <option value="gif">✨ Animado (GIF)</option>
+                      <option value="carousel">🔄 Carrusel</option>
+                      <option value="banner">📐 Banner Web</option>
+                      <option value="display">🖥️ Display / Rich Media</option>
+                      <option value="email">📧 Email Marketing</option>
                     </select>
                   </div>
                   <div className="form-group">
@@ -1480,20 +1504,6 @@ export default function GanaPlayMainApp() {
                     <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} required />
                   </div>
                 </div>
-
-                {/* Campo extra solo para Post */}
-                {format === 'post' && (
-                  <div className="form-group" style={{ marginTop: '-8px' }}>
-                    <label className="label" style={{ color: '#f472b6' }}>📅 Fecha de Publicación del Post</label>
-                    <input
-                      type="date"
-                      value={postPublishDate}
-                      onChange={(e) => setPostPublishDate(e.target.value)}
-                      style={{ border: '1px solid rgba(244,114,182,0.4)', boxShadow: '0 0 0 3px rgba(244,114,182,0.08)' }}
-                    />
-                    <p style={{ fontSize: '11px', color: 'rgba(244,114,182,0.7)', marginTop: '6px', marginBottom: 0 }}>💡 Esta es la fecha en que saldrá publicado el post en redes.</p>
-                  </div>
-                )}
 
                 <button type="submit" className="btn" style={{ width: "100%", marginTop: "20px", padding: "18px" }}>✦ Crear y Asignar Solicitud</button>
               </form>
@@ -1514,7 +1524,7 @@ export default function GanaPlayMainApp() {
                 </span>
                 {/* Format pill */}
                 <span className={`fmt-pill fmt-${selectedReq.format ?? 'static'}`} style={{flexShrink:0}}>
-                  {selectedReq.format === 'post' ? '📲 Post' : selectedReq.format === 'video' ? '🎬 Video' : selectedReq.format === 'gif' ? '✨ GIF' : '🖼️ Estático'}
+                  {selectedReq.format === 'video' ? '🎬 Video' : selectedReq.format === 'gif' ? '✨ GIF' : selectedReq.format === 'carousel' ? '🔄 Carrusel' : selectedReq.format === 'banner' ? '📐 Banner Web' : selectedReq.format === 'display' ? '🖥️ Display' : selectedReq.format === 'email' ? '📧 Email' : '🖼️ Estático'}
                 </span>
               </div>
               <X size={22} onClick={() => setModalOpen(false)} style={{ cursor: 'pointer', color:'var(--text-secondary)', flexShrink:0 }} />
@@ -1610,7 +1620,7 @@ export default function GanaPlayMainApp() {
                 <div>
                    <h3 style={{ marginBottom: '20px' }}>Piezas Finales (Máx 3)</h3>
                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                     {["1080x1080", "Historia", "General"].filter(d => selectedReq.dimensions.includes(d)).map(dim => {
+                     {["1080x1080", "Historia", "General", "Banner Web", "Display", "Hero Web", "Half Page"].filter(d => selectedReq.dimensions.includes(d)).map(dim => {
                        const creative = selectedReq.creatives.find(c => c.type === dim);
                        return (
                          <div key={dim} style={{ border: '1px dashed var(--border-color)', padding: '20px', borderRadius: '12px' }}>
