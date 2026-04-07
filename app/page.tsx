@@ -362,8 +362,9 @@ export default function GanaPlayMainApp() {
         assignedTo: userName
       });
       if (selectedReq?.id === req.id) setSelectedReq({ ...selectedReq, assignedTo: userName });
+      addToast(`Te asignaste "${req.title}".`, 'success');
     } catch (err: any) {
-      console.error(err);
+      addToast("Error al asignar: " + err.message, 'error');
     }
   };
 
@@ -1352,7 +1353,7 @@ export default function GanaPlayMainApp() {
                   </div>
                 );
               })}
-              <button className="btn btn-secondary" style={{ marginTop:'8px', fontSize:'12px', padding:'10px 16px' }}>
+              <button className="btn btn-secondary" style={{ marginTop:'8px', fontSize:'12px', padding:'10px 16px', opacity: 0.5, cursor: 'not-allowed' }} title="Próximamente" onClick={() => addToast("Función disponible próximamente.", 'info')}>
                 <Plus size={14} /> Agregar grupo nuevo
               </button>
             </div>

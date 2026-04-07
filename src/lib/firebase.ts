@@ -13,4 +13,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-export const storage = getStorage(app);
+// Pasar el bucket explícitamente con gs:// para evitar "No default bucket found"
+const bucketUrl = `gs://${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'ganaplay-73120.firebasestorage.app'}`;
+export const storage = getStorage(app, bucketUrl);
