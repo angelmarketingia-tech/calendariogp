@@ -52,8 +52,9 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ content: response.choices[0].message.content });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error in AI Chat:", error);
-    return NextResponse.json({ error: error.message || "Error interno del chatbot." }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Error interno del chatbot.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -94,8 +94,9 @@ Requisitos de la evaluación:
 
     return NextResponse.json(parsed);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error analyzing image:", error);
-    return NextResponse.json({ error: error.message || "Error interno del servidor al analizar la imagen." }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Error interno del servidor al analizar la imagen.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
