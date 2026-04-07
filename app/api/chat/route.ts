@@ -45,9 +45,26 @@ export async function POST(req: Request) {
       baseURL: "https://api.deepseek.com"
     });
 
+    // DeepSeek-chat no soporta vision. Convertir mensajes con image_url a texto.
+    const sanitizedMessages = messages.map((msg: any) => {
+      if (Array.isArray(msg.content)) {
+        const textParts: string[] = [];
+        const imageParts: string[] = [];
+        for (const part of msg.content) {
+          if (part.type === 'text') textParts.push(part.text);
+          else if (part.type === 'image_url') imageParts.push(part.image_url?.url ?? '');
+        }
+        const imageNote = imageParts.length > 0
+          ? `\n[El usuario adjuntó ${imageParts.length} imagen(es) al chat. URL: ${imageParts.join(', ')}. Analiza según el contexto del requerimiento.]`
+          : '';
+        return { ...msg, content: textParts.join('\n') + imageNote };
+      }
+      return msg;
+    });
+
     const response = await deepseek.chat.completions.create({
-      model: "deepseek-chat", 
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
+      model: "deepseek-chat",
+      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...sanitizedMessages],
       max_tokens: 1000,
     });
 

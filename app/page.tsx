@@ -24,7 +24,7 @@ const PRIORITY_CONFIG: Record<string, { bg: string; text: string; label: string 
   "Medio": { bg: "rgba(245, 158, 11, 0.2)", text: "#fbbf24", label: "● Medio" },
   "Alto":  { bg: "rgba(239, 68, 68, 0.2)",  text: "#f87171", label: "● Alto" },
 };
-const priorityConfig = PRIORITY_CONFIG;
+
 import {
   Calendar, Layout, List, Plus, Search, MoreHorizontal, User,
   FileText, Image as ImageIcon, MessageSquare,
@@ -36,11 +36,13 @@ import {
 
 // ─── Firebase Imports ───
 import { db, storage } from '@/lib/firebase';
-import { 
-  collection, doc, onSnapshot, setDoc, updateDoc, 
-  addDoc, query, orderBy, serverTimestamp 
+import {
+  collection, doc, onSnapshot, setDoc, updateDoc,
+  addDoc, query, orderBy, serverTimestamp
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+const priorityConfig = PRIORITY_CONFIG;
 
 type RequestStatus = "Publicado" | "Denegado" | "En Proceso" | "Planeando" | "Pendiente";
 
@@ -167,13 +169,30 @@ export default function GanaPlayMainApp() {
   // Weekly Calendar Generation
   const [weekDays, setWeekDays] = useState<{dateStr: string, dayName: string, dayNum: number, monthName: string, isToday: boolean, isMonday: boolean}[]>([]);
 
-  // ─── Carga persistente desde Firebase en tiempo real ───
+  // ─── Carga persistente desde Firebase + copia de seguridad en localStorage ───
   useEffect(() => {
-    // Escuchar solicitudes en tiempo real
+    // Restaurar desde localStorage mientras carga Firebase (copia de seguridad local)
+    try {
+      const cached = localStorage.getItem('gp_requests_backup');
+      if (cached) {
+        const parsed = JSON.parse(cached) as RequestType[];
+        if (parsed.length > 0) {
+          setRequests(parsed);
+          setLoadingData(false);
+        }
+      }
+    } catch {}
+
+    // Escuchar solicitudes en tiempo real desde Firebase
     const qReq = query(collection(db, "requests"), orderBy("deliveryDate", "asc"));
     const unsubReq = onSnapshot(qReq, (snap) => {
       const data = snap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as RequestType));
       setRequests(data);
+      setLoadingData(false);
+      // Guardar copia de seguridad en localStorage (accesible desde cualquier IP que use este navegador)
+      try { localStorage.setItem('gp_requests_backup', JSON.stringify(data)); } catch {}
+    }, (err) => {
+      console.error("Firebase error:", err);
       setLoadingData(false);
     });
 
@@ -255,7 +274,7 @@ export default function GanaPlayMainApp() {
   const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!copyStr || !deliveryDate || dimensions.length === 0 || countries.length === 0) {
-      alert("Por favor completa todos los campos requeridos (Países, Dimensiones, Copy, Fecha).");
+      addToast("Completa todos los campos: País, Dimensiones, Copy y Fecha.", 'error');
       return;
     }
 
@@ -276,29 +295,30 @@ export default function GanaPlayMainApp() {
       creatives: [],
       comments: 0
     };
-    
+
     try {
       await setDoc(doc(db, "requests", nextId), newReq);
       setTitleStr(""); setCopyStr(""); setDimensions([]); setCountries([]); setReferenceImg(undefined); setPriority("Medio"); setPostPublishDate(""); setFormat("static");
       setCreateModalOpen(false);
+      addToast(`Solicitud ${nextId} creada correctamente.`, 'success');
     } catch (err: any) {
-      alert("Error al guardar en la nube: " + err.message);
+      addToast("Error al guardar: " + err.message, 'error');
     }
   };
 
   const handleRefUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     setLoading(true);
     try {
-      // Subir imagen de referencia a la nube (Firebase Storage)
       const storageRef = ref(storage, `references/${Date.now()}_${file.name}`);
       const snapshot = await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(snapshot.ref);
       setReferenceImg(downloadURL);
+      addToast("Imagen de referencia subida.", 'success');
     } catch (err: any) {
-      alert("Error subiendo referencia: " + err.message);
+      addToast("Error subiendo referencia: " + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -310,13 +330,12 @@ export default function GanaPlayMainApp() {
 
     setLoading(true);
     try {
-      // Subir imagen del chat AI a la nube para que no se pierda
       const storageRef = ref(storage, `chat_ai/${Date.now()}_${file.name}`);
       const snapshot = await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(snapshot.ref);
       setChatImage(downloadURL);
     } catch (err: any) {
-      alert("Error subiendo imagen al chat: " + err.message);
+      addToast("Error subiendo imagen al chat: " + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -371,58 +390,64 @@ export default function GanaPlayMainApp() {
 
     setLoading(true);
     setErrorMsg(null);
-    
+
     try {
-      // 1. Subir a Firebase Storage
+      // 1. Subir archivo a Firebase Storage (accesible desde cualquier IP)
       const storageRef = ref(storage, `creatives/${selectedReq.id}/${type.replace(/\s/g, '_')}_${Date.now()}`);
       const snapshot = await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(snapshot.ref);
 
-      // 2. Opcional: pasar base64 a la IA para evaluación (necesitamos base64 para la API de Gemini Vision)
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-      const base64data = await base64Promise;
+      // 2. Intentar evaluación con IA (opcional - si falla, se guarda igual)
+      let aiEvaluation: Creative['aiEvaluation'] = undefined;
+      try {
+        const reader = new FileReader();
+        const base64data = await new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
 
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageBase64: base64data,
-          copy: selectedReq.copy,
-          format: selectedReq.format,
-          country: selectedReq.countries.join(", "),
-          dimensions: type
-        })
-      });
-      
-      const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || "Error de la IA evaluadora.");
-      
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageBase64: base64data,
+            copy: selectedReq.copy,
+            format: selectedReq.format,
+            country: selectedReq.countries.join(", "),
+            dimensions: type
+          })
+        });
+
+        const resData = await res.json();
+        if (res.ok && resData.rating) {
+          aiEvaluation = resData;
+        }
+      } catch {
+        // IA falló — continuamos guardando el creativo sin evaluación
+        addToast("Pieza guardada. Evaluación IA no disponible.", 'info');
+      }
+
       const newCreative: Creative = {
-        url: downloadURL, // Guardar la URL de la nube, no base64
+        url: downloadURL,
         type: type,
-        aiEvaluation: resData
+        ...(aiEvaluation ? { aiEvaluation } : {})
       };
 
       const newCreativesList = [...selectedReq.creatives.filter(c => c.type !== type), newCreative];
 
-      // 3. Actualizar Firestore de forma permanente
+      // 3. Guardar en Firestore (persistente, accesible desde cualquier IP)
       await updateDoc(doc(db, "requests", selectedReq.id), {
         status: "En Proceso",
         creatives: newCreativesList
       });
 
-      setSelectedReq({
-        ...selectedReq,
-        status: "En Proceso",
-        creatives: newCreativesList
-      });
-      
+      setSelectedReq({ ...selectedReq, status: "En Proceso", creatives: newCreativesList });
+      addToast(`Pieza "${type}" subida correctamente.`, 'success');
+
     } catch (err: any) {
       setErrorMsg(err.message);
+      addToast("Error al subir la pieza: " + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -475,20 +500,28 @@ export default function GanaPlayMainApp() {
     }
   };
 
-  const handleDownload = (creative: Creative, reqId: string, dim: string) => {
-    const link = document.createElement('a');
-    link.href = creative.url;
-    // Try to extract extension from the URL path; fall back to 'jpg'
-    const urlPath = creative.url.split('?')[0];
-    const lastSegment = urlPath.split('/').pop() ?? '';
-    const extMatch = lastSegment.match(/\.([a-zA-Z0-9]+)$/);
-    const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
-    link.download = `${reqId}_${dim.replace(/\s/g, '_')}.${ext}`;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = async (creative: Creative, reqId: string, dim: string) => {
+    try {
+      // Fetch como blob para forzar descarga (los URLs de Firebase Storage son cross-origin)
+      const response = await fetch(creative.url);
+      if (!response.ok) throw new Error("No se pudo obtener el archivo.");
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const urlPath = creative.url.split('?')[0];
+      const lastSegment = urlPath.split('/').pop() ?? '';
+      const extMatch = lastSegment.match(/\.([a-zA-Z0-9]+)$/);
+      const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `${reqId}_${dim.replace(/\s/g, '_')}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+      addToast("Descarga iniciada.", 'success');
+    } catch (err: any) {
+      addToast("Error al descargar: " + err.message, 'error');
+    }
   };
 
   const handleDeleteCreative = async (reqId: string, dimType: string) => {
@@ -1628,7 +1661,25 @@ export default function GanaPlayMainApp() {
           </div>
         </div>
       )}
-      {loading && <div className="loading-overlay"><div className="loader"></div><p>Evaluando con Inteligencia Artificial...</p></div>}
+      {loading && <div className="loading-overlay"><div className="loader"></div><p>Procesando...</p></div>}
+
+      {/* TOAST NOTIFICATIONS */}
+      {toasts.length > 0 && (
+        <div style={{ position:'fixed', bottom:'28px', left:'50%', transform:'translateX(-50%)', zIndex:300, display:'flex', flexDirection:'column', gap:'8px', alignItems:'center', pointerEvents:'none' }}>
+          {toasts.map(t => (
+            <div key={t.id} style={{
+              padding:'12px 22px', borderRadius:'14px', fontSize:'13px', fontWeight:700,
+              background: t.type === 'success' ? 'rgba(34,197,94,0.95)' : t.type === 'error' ? 'rgba(239,68,68,0.95)' : 'rgba(20,20,20,0.95)',
+              color:'#fff', backdropFilter:'blur(12px)',
+              border: `1px solid ${t.type === 'success' ? 'rgba(34,197,94,0.5)' : t.type === 'error' ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
+              boxShadow:'0 8px 30px rgba(0,0,0,0.5)',
+              whiteSpace:'nowrap'
+            }}>
+              {t.type === 'success' ? '✓ ' : t.type === 'error' ? '✕ ' : 'ℹ '}{t.msg}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
