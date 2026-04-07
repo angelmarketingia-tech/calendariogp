@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, ChangeEvent, useEffect, useRef, useCallback } from 'react';
+import React, { useState, ChangeEvent, useEffect, useRef, useCallback, useMemo } from 'react';
 
 // ─── Constantes fuera del componente para evitar recrearlas en cada render ───
 const STATUS_COLORS: Record<string, string> = {
@@ -31,7 +31,7 @@ import {
   ChevronRight, CalendarDays, Maximize2, X,
   CheckCircle2, Clock,
   LogOut, AlertCircle, UploadCloud, Bot, Send, Trash2,
-  Download
+  Download, Bell
 } from 'lucide-react';
 
 // ─── Firebase Imports ───
@@ -91,6 +91,18 @@ type DesignerChatMsg = {
 type ChatMessage = {
   role: "user" | "assistant";
   content: string | any[];
+};
+
+type NotificationItem = {
+  id: string;
+  type: 'new_request' | 'status_change' | 'creative_uploaded' | 'assignment' | 'deadline_overdue' | 'deadline_today' | 'deadline_tomorrow';
+  title: string;
+  message: string;
+  requestId?: string;
+  targetRole: 'admin' | 'designer';
+  read: boolean;
+  createdAt?: any;
+  triggeredBy?: string;
 };
 
 export default function GanaPlayMainApp() {
@@ -165,6 +177,10 @@ export default function GanaPlayMainApp() {
 
   // Drag & drop for calendar
   const [draggedReqId, setDraggedReqId] = useState<string | null>(null);
+
+  // ─── Notificaciones ───
+  const [firestoreNotifs, setFirestoreNotifs] = useState<NotificationItem[]>([]);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
 
   // Weekly Calendar Generation
   const [weekDays, setWeekDays] = useState<{dateStr: string, dayName: string, dayNum: number, monthName: string, isToday: boolean, isMonday: boolean}[]>([]);
@@ -258,6 +274,18 @@ export default function GanaPlayMainApp() {
     return () => document.removeEventListener('click', handler);
   }, [contextMenu]);
 
+  // ─── Listener de notificaciones (se activa cuando el rol está disponible) ───
+  useEffect(() => {
+    if (!role) return;
+    const targetRoleForNotifs = (role === 'admin' || role === 'cm') ? 'admin' : 'designer';
+    const qNotif = query(collection(db, "notifications"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(qNotif, (snap) => {
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as NotificationItem));
+      setFirestoreNotifs(all.filter(n => n.targetRole === targetRoleForNotifs));
+    });
+    return () => unsub();
+  }, [role]);
+
   const toggleSelection = (setter: React.Dispatch<React.SetStateAction<string[]>>, list: string[], val: string) => {
     if (list.includes(val)) setter(list.filter(item => item !== val));
     else setter([...list, val]);
@@ -301,6 +329,7 @@ export default function GanaPlayMainApp() {
       setTitleStr(""); setCopyStr(""); setDimensions([]); setCountries([]); setReferenceImg(undefined); setPriority("Medio"); setPostPublishDate(""); setFormat("static");
       setCreateModalOpen(false);
       addToast(`Solicitud ${nextId} creada correctamente.`, 'success');
+      await createNotification('new_request', '📋 Nueva Solicitud', `${nextId}: "${newReq.title}" — Entrega ${newReq.deliveryDate}`, 'designer', nextId);
     } catch (err: any) {
       addToast("Error al guardar: " + err.message, 'error');
     }
@@ -344,12 +373,10 @@ export default function GanaPlayMainApp() {
   const handleChangeStatus = async (e: ChangeEvent<HTMLSelectElement>) => {
     if(!selectedReq || role !== 'designer') return;
     const newStatus = e.target.value as RequestStatus;
-    
     try {
-      await updateDoc(doc(db, "requests", selectedReq.id), {
-        status: newStatus
-      });
+      await updateDoc(doc(db, "requests", selectedReq.id), { status: newStatus });
       setSelectedReq({ ...selectedReq, status: newStatus });
+      await createNotification('status_change', '🔄 Cambio de Estado', `${selectedReq.id} "${selectedReq.title}" → ${newStatus} (por ${userName})`, 'admin', selectedReq.id);
     } catch (err: any) {
       console.error(err);
     }
@@ -363,6 +390,7 @@ export default function GanaPlayMainApp() {
       });
       if (selectedReq?.id === req.id) setSelectedReq({ ...selectedReq, assignedTo: userName });
       addToast(`Te asignaste "${req.title}".`, 'success');
+      await createNotification('assignment', '👤 Solicitud Asignada', `${req.id} "${req.title}" asignado a ${userName}`, 'admin', req.id);
     } catch (err: any) {
       addToast("Error al asignar: " + err.message, 'error');
     }
@@ -445,6 +473,7 @@ export default function GanaPlayMainApp() {
 
       setSelectedReq({ ...selectedReq, status: "En Proceso", creatives: newCreativesList });
       addToast(`Pieza "${type}" subida correctamente.`, 'success');
+      await createNotification('creative_uploaded', '🎨 Pieza Subida', `${selectedReq.id}: "${type}" subido por ${userName}`, 'admin', selectedReq.id);
 
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -591,9 +620,63 @@ export default function GanaPlayMainApp() {
   const handleLogout = () => {
     setRole(null); setUserName(""); setLoginPass(""); setLoginDesignerName("");
     setLoginError(""); setLoginRole(null); setActiveTab('Tablero Kanban');
+    setNotifPanelOpen(false);
     sessionStorage.removeItem('gp_role');
     sessionStorage.removeItem('gp_userName');
   };
+
+  // ─── Crear notificación en Firestore ───
+  const createNotification = useCallback(async (
+    type: NotificationItem['type'],
+    title: string,
+    message: string,
+    targetRole: 'admin' | 'designer',
+    requestId?: string
+  ) => {
+    try {
+      await addDoc(collection(db, "notifications"), {
+        type, title, message, targetRole, requestId: requestId || null,
+        read: false, createdAt: serverTimestamp(), triggeredBy: userName
+      });
+    } catch {}
+  }, [userName]);
+
+  // ─── Alertas de vencimiento (calculadas localmente) ───
+  const deadlineAlerts = useMemo<NotificationItem[]>(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const alerts: NotificationItem[] = [];
+    requests.forEach(req => {
+      if (req.status === 'Publicado' || req.status === 'Denegado' || !req.deliveryDate) return;
+      if (req.deliveryDate < today) {
+        alerts.push({ id: `ov_${req.id}`, type: 'deadline_overdue', title: '⚠️ Vencida', message: `${req.id} "${req.title}" — venció el ${req.deliveryDate}`, requestId: req.id, targetRole: 'admin', read: false });
+        alerts.push({ id: `ov_d_${req.id}`, type: 'deadline_overdue', title: '⚠️ Vencida', message: `${req.id} "${req.title}" — venció el ${req.deliveryDate}`, requestId: req.id, targetRole: 'designer', read: false });
+      } else if (req.deliveryDate === today) {
+        alerts.push({ id: `td_${req.id}`, type: 'deadline_today', title: '🔴 Vence hoy', message: `${req.id} "${req.title}" — entrega HOY`, requestId: req.id, targetRole: 'admin', read: false });
+        alerts.push({ id: `td_d_${req.id}`, type: 'deadline_today', title: '🔴 Vence hoy', message: `${req.id} "${req.title}" — entrega HOY`, requestId: req.id, targetRole: 'designer', read: false });
+      } else if (req.deliveryDate === tomorrow) {
+        alerts.push({ id: `tm_${req.id}`, type: 'deadline_tomorrow', title: '🟡 Vence mañana', message: `${req.id} "${req.title}" — entrega mañana`, requestId: req.id, targetRole: 'admin', read: false });
+        alerts.push({ id: `tm_d_${req.id}`, type: 'deadline_tomorrow', title: '🟡 Vence mañana', message: `${req.id} "${req.title}" — entrega mañana`, requestId: req.id, targetRole: 'designer', read: false });
+      }
+    });
+    return alerts;
+  }, [requests]);
+
+  // ─── Lista completa de notificaciones para el rol actual ───
+  const allNotifications = useMemo<NotificationItem[]>(() => {
+    const targetRoleForNotifs = (role === 'admin' || role === 'cm') ? 'admin' : 'designer';
+    const myAlerts = deadlineAlerts.filter(a => a.targetRole === targetRoleForNotifs);
+    return [...myAlerts, ...firestoreNotifs];
+  }, [deadlineAlerts, firestoreNotifs, role]);
+
+  const unreadCount = useMemo(() => {
+    return allNotifications.filter(n => !n.read).length;
+  }, [allNotifications]);
+
+  const markAllRead = useCallback(async () => {
+    const unread = firestoreNotifs.filter(n => !n.read);
+    await Promise.all(unread.map(n => updateDoc(doc(db, "notifications", n.id), { read: true })));
+  }, [firestoreNotifs]);
 
   if (!role) {
     const ROLE_CARDS = [
@@ -752,6 +835,22 @@ export default function GanaPlayMainApp() {
           >
             <Plus size={16} /> <span style={{ display:'none' }} className="btn-label">Nuevo</span>
           </button>
+
+          {/* Campana de notificaciones */}
+          <button
+            title="Notificaciones"
+            className="btn btn-secondary"
+            style={{ padding:'9px 14px', fontSize:'13px', position:'relative' }}
+            onClick={() => { setNotifPanelOpen(p => !p); if (!notifPanelOpen) markAllRead(); }}
+          >
+            <Bell size={16} />
+            {unreadCount > 0 && (
+              <span style={{ position:'absolute', top:'-6px', right:'-6px', background:'#ef4444', color:'#fff', borderRadius:'50%', minWidth:'18px', height:'18px', fontSize:'10px', fontWeight:900, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px', boxShadow:'0 0 6px rgba(239,68,68,0.7)' }}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+
           <button title="Cerrar sesión" className="btn btn-secondary"
             style={{ padding:'9px 14px', fontSize:'13px', borderColor:'#ef4444', color:'#ef4444' }}
             onClick={handleLogout}
@@ -1396,6 +1495,74 @@ export default function GanaPlayMainApp() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ─── PANEL DE NOTIFICACIONES ─── */}
+      {notifPanelOpen && (
+        <>
+          {/* Overlay para cerrar */}
+          <div style={{ position:'fixed', inset:0, zIndex:149 }} onClick={() => setNotifPanelOpen(false)} />
+          {/* Panel */}
+          <div style={{ position:'fixed', top:'70px', right:'16px', width:'380px', maxHeight:'calc(100vh - 90px)', zIndex:150, background:'rgba(8,15,10,0.97)', border:'1px solid rgba(34,197,94,0.25)', borderRadius:'20px', backdropFilter:'blur(20px)', boxShadow:'0 20px 60px rgba(0,0,0,0.7)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+            {/* Header del panel */}
+            <div style={{ padding:'16px 20px', borderBottom:'1px solid rgba(255,255,255,0.07)', display:'flex', justifyContent:'space-between', alignItems:'center', background:'rgba(34,197,94,0.06)' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                <Bell size={16} color="var(--accent-color)" />
+                <span style={{ fontWeight:800, fontSize:'14px', color:'var(--text-primary)' }}>Notificaciones</span>
+                {unreadCount > 0 && <span style={{ padding:'2px 8px', borderRadius:'20px', background:'rgba(239,68,68,0.2)', color:'#f87171', fontSize:'11px', fontWeight:700, border:'1px solid rgba(239,68,68,0.3)' }}>{unreadCount} nuevas</span>}
+              </div>
+              <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                {firestoreNotifs.some(n => !n.read) && (
+                  <button onClick={markAllRead} style={{ background:'none', border:'none', color:'var(--accent-color)', fontSize:'11px', cursor:'pointer', fontWeight:700 }}>Marcar todas leídas</button>
+                )}
+                <X size={16} style={{ cursor:'pointer', color:'var(--text-secondary)' }} onClick={() => setNotifPanelOpen(false)} />
+              </div>
+            </div>
+
+            {/* Lista */}
+            <div style={{ overflowY:'auto', flex:1 }}>
+              {allNotifications.length === 0 ? (
+                <div style={{ padding:'40px', textAlign:'center', color:'var(--text-secondary)', fontSize:'13px' }}>
+                  <Bell size={32} style={{ opacity:0.2, marginBottom:'12px' }} />
+                  <p style={{ margin:0 }}>Sin notificaciones por ahora.</p>
+                </div>
+              ) : (
+                allNotifications.map((n) => {
+                  const colors: Record<string, { bg: string; border: string; dot: string }> = {
+                    deadline_overdue: { bg:'rgba(239,68,68,0.08)', border:'rgba(239,68,68,0.25)', dot:'#ef4444' },
+                    deadline_today:   { bg:'rgba(239,68,68,0.06)', border:'rgba(239,68,68,0.2)',  dot:'#f87171' },
+                    deadline_tomorrow:{ bg:'rgba(245,158,11,0.07)', border:'rgba(245,158,11,0.2)', dot:'#fbbf24' },
+                    new_request:      { bg:'rgba(34,197,94,0.06)', border:'rgba(34,197,94,0.2)',  dot:'#22c55e' },
+                    status_change:    { bg:'rgba(0,163,255,0.06)', border:'rgba(0,163,255,0.2)',  dot:'#00A3FF' },
+                    creative_uploaded:{ bg:'rgba(168,85,247,0.06)', border:'rgba(168,85,247,0.2)', dot:'#a855f7' },
+                    assignment:       { bg:'rgba(244,114,182,0.06)', border:'rgba(244,114,182,0.2)', dot:'#f472b6' },
+                  };
+                  const c = colors[n.type] || colors.new_request;
+                  return (
+                    <div key={n.id}
+                      style={{ padding:'14px 20px', borderBottom:'1px solid rgba(255,255,255,0.04)', background: n.read ? 'transparent' : c.bg, borderLeft:`3px solid ${n.read ? 'transparent' : c.dot}`, cursor: n.requestId ? 'pointer' : 'default', transition:'background 0.15s' }}
+                      onClick={() => {
+                        if (n.requestId) {
+                          const req = requests.find(r => r.id === n.requestId);
+                          if (req) { setSelectedReq(req); setModalOpen(true); setNotifPanelOpen(false); }
+                        }
+                      }}
+                    >
+                      <div style={{ display:'flex', gap:'10px', alignItems:'flex-start' }}>
+                        <div style={{ width:'8px', height:'8px', borderRadius:'50%', background: n.read ? 'rgba(255,255,255,0.1)' : c.dot, flexShrink:0, marginTop:'5px', boxShadow: n.read ? 'none' : `0 0 6px ${c.dot}` }} />
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontWeight:700, fontSize:'13px', color:'var(--text-primary)', marginBottom:'3px' }}>{n.title}</div>
+                          <div style={{ fontSize:'12px', color:'var(--text-secondary)', lineHeight:1.5 }}>{n.message}</div>
+                          {n.triggeredBy && <div style={{ fontSize:'10px', color:'rgba(255,255,255,0.25)', marginTop:'4px' }}>por {n.triggeredBy}</div>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       {/* CREATE MODAL */}
