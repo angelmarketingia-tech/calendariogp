@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, ChangeEvent, useEffect, useRef } from 'react';
+import React, { useState, ChangeEvent, useEffect, useRef, useCallback } from 'react';
 
 // ─── Constantes fuera del componente para evitar recrearlas en cada render ───
 const STATUS_COLORS: Record<string, string> = {
@@ -92,8 +92,18 @@ type ChatMessage = {
 };
 
 export default function GanaPlayMainApp() {
-  const [role, setRole] = useState<"admin" | "cm" | "designer" | null>(null);
-  const [userName, setUserName] = useState<string>("");
+  const [role, setRole] = useState<"admin" | "cm" | "designer" | null>(() => {
+    try { return (sessionStorage.getItem('gp_role') as any) || null; } catch { return null; }
+  });
+  const [userName, setUserName] = useState<string>(() => {
+    try { return sessionStorage.getItem('gp_userName') || ''; } catch { return ''; }
+  });
+  const [toasts, setToasts] = useState<{id: number; msg: string; type: 'success'|'error'|'info'}[]>([]);
+  const addToast = useCallback((msg: string, type: 'success'|'error'|'info' = 'info') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, {id, msg, type}]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  }, []);
   const [requests, setRequests] = useState<RequestType[]>([]);
 
   // Login state
@@ -121,10 +131,21 @@ export default function GanaPlayMainApp() {
 
   // Designer File & Chat State
   const [loading, setLoading] = useState(false);
+  const [analyzingAI, setAnalyzingAI] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [loadingData, setLoadingData] = useState(true);
+  const [contextMenu, setContextMenu] = useState<{reqId: string; x: number; y: number} | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{role: 'assistant', content: 'Hola. Soy la IA Andromeda de Meta Ads. Puedo analizar tus piezas si las subes. ¿En qué recomendación creativa te puedo ayudar?'}]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem('andromeda_chat');
+      if (saved) return JSON.parse(saved).slice(-20);
+    } catch {}
+    return [{ role: 'assistant' as const, content: 'Hola. Soy la IA Andromeda de Meta Ads. Puedo analizar tus piezas si las subes. ¿En qué recomendación creativa te puedo ayudar?' }];
+  });
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatImage, setChatImage] = useState<string | null>(null);
@@ -153,6 +174,7 @@ export default function GanaPlayMainApp() {
     const unsubReq = onSnapshot(qReq, (snap) => {
       const data = snap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as RequestType));
       setRequests(data);
+      setLoadingData(false);
     });
 
     // Escuchar chat de equipo en tiempo real
@@ -204,6 +226,18 @@ export default function GanaPlayMainApp() {
       teamChatRef.current.scrollTop = teamChatRef.current.scrollHeight;
     }
   }, [teamChatContent]);
+
+  // Persistir chat IA en localStorage (MEJORA 11)
+  useEffect(() => {
+    try { localStorage.setItem('andromeda_chat', JSON.stringify(chatMessages.slice(-20))); } catch {}
+  }, [chatMessages]);
+
+  // Cerrar menú contextual al hacer click fuera (MEJORA 5)
+  useEffect(() => {
+    const handler = () => setContextMenu(null);
+    if (contextMenu) document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [contextMenu]);
 
   const toggleSelection = (setter: React.Dispatch<React.SetStateAction<string[]>>, list: string[], val: string) => {
     if (list.includes(val)) setter(list.filter(item => item !== val));
@@ -490,6 +524,8 @@ export default function GanaPlayMainApp() {
     setLoginError("");
     if (loginPass === PASS_TRAFFICKER) {
       setRole("admin"); setUserName("Trafficker");
+      sessionStorage.setItem('gp_role', 'admin');
+      sessionStorage.setItem('gp_userName', 'Trafficker');
     } else {
       setLoginError("❌ Contraseña incorrecta.");
     }
@@ -499,6 +535,8 @@ export default function GanaPlayMainApp() {
     setLoginError("");
     if (loginPass === PASS_GENERAL) {
       setRole("cm"); setUserName("Community Manager");
+      sessionStorage.setItem('gp_role', 'cm');
+      sessionStorage.setItem('gp_userName', 'Community Manager');
     } else {
       setLoginError("❌ Contraseña incorrecta.");
     }
@@ -509,6 +547,8 @@ export default function GanaPlayMainApp() {
     if (!loginDesignerName) { setLoginError("Selecciona tu nombre."); return; }
     if (loginPass === PASS_GENERAL) {
       setRole("designer"); setUserName(loginDesignerName);
+      sessionStorage.setItem('gp_role', 'designer');
+      sessionStorage.setItem('gp_userName', loginDesignerName);
     } else {
       setLoginError("❌ Contraseña incorrecta.");
     }
@@ -517,6 +557,8 @@ export default function GanaPlayMainApp() {
   const handleLogout = () => {
     setRole(null); setUserName(""); setLoginPass(""); setLoginDesignerName("");
     setLoginError(""); setLoginRole(null); setActiveTab('Tablero Kanban');
+    sessionStorage.removeItem('gp_role');
+    sessionStorage.removeItem('gp_userName');
   };
 
   if (!role) {
@@ -864,14 +906,14 @@ export default function GanaPlayMainApp() {
                     <div style={{ padding:'12px 14px', display:'flex', alignItems:'flex-start', borderRight:'1px solid rgba(255,255,255,0.04)', paddingTop:'14px' }}>
                       <span style={{ padding:'3px 8px', fontSize:'9px', fontWeight:800, textTransform:'uppercase', background:STATUS_COLORS[status], color:STATUS_TEXT_COLORS[status], borderRadius:'6px', border:`1px solid ${STATUS_TEXT_COLORS[status]}`, whiteSpace:'nowrap' }}>{status}</span>
                     </div>
-                    {rowCards.map(({day, cards}: any) => (
+                    {rowCards.map(({day, cards}) => (
                       <div key={day.dateStr}
                         style={{ borderLeft:'1px solid rgba(255,255,255,0.03)', padding:'8px', minHeight:'60px', background: day.isToday ? 'rgba(34,197,94,0.04)' : 'transparent', display:'flex', flexDirection:'column', gap:'6px', transition:'background 0.15s' }}
                         onDragOver={e => { e.preventDefault(); (e.currentTarget as HTMLElement).style.background = 'rgba(34,197,94,0.1)'; }}
                         onDragLeave={e => { (e.currentTarget as HTMLElement).style.background = day.isToday ? 'rgba(34,197,94,0.04)' : 'transparent'; }}
                         onDrop={e => { e.preventDefault(); (e.currentTarget as HTMLElement).style.background = day.isToday ? 'rgba(34,197,94,0.04)' : 'transparent'; handleDropOnDay(day.dateStr); }}
                       >
-                        {cards.map((c:any) => (
+                        {cards.map((c) => (
                           <div key={c.id}
                             draggable
                             style={{ padding:'8px 10px', borderRadius:'8px', background:'rgba(0,0,0,0.6)', cursor:'grab', borderLeft:`3px solid ${STATUS_TEXT_COLORS[c.status]}`, fontSize:'11px', fontWeight:600, color:'var(--text-primary)', lineHeight:1.3, transition:'all 0.2s' }}
@@ -897,7 +939,7 @@ export default function GanaPlayMainApp() {
                 );
               })}
               {/* Empty state */}
-              {days.every((d:any) => requests.filter(r => r.deliveryDate === d.dateStr).length === 0) && (
+              {days.every((d) => requests.filter(r => r.deliveryDate === d.dateStr).length === 0) && (
                 <div style={{ padding:'24px', textAlign:'center', color:'var(--text-secondary)', fontSize:'13px', borderTop:'1px solid rgba(255,255,255,0.04)' }}>Sin solicitudes esta semana</div>
               )}
             </div>

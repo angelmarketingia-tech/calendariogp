@@ -33,27 +33,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No messages provided." }, { status: 400 });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      const lastMsg = messages[messages.length - 1];
-      const hasImage = Array.isArray(lastMsg?.content) && lastMsg.content.some((c: any) => c.type === 'image_url');
-      const simResponse = hasImage
-        ? `## 🎨 Análisis de tu pieza\n\n**1. Jerarquía Visual:** La composición presenta elementos que compiten por atención. Asegúrate de que el CTA sea el elemento más prominente después del logo.\n\n**2. Copy:** Verifica que el texto no supere el 20% del área total (regla Meta). Usa fuente bold mínimo 24pt para el título principal.\n\n**3. 🎯 CTR Estimado:** Medio-Alto (potencial de 2-4%)\n\n**✅ 3 mejoras inmediatas:**\n- Aumenta contraste entre texto y fondo (ratio mínimo 4.5:1)\n- Agrega un marco o overlay semitransparente detrás del copy\n- El botón CTA debe tener color opuesto al fondo dominante\n\n⚠️ *Nota: Análisis en modo simulación. Activa la API Key para análisis real con IA.*`
-        : `## 💡 Recomendación para Meta Ads\n\n**Algoritmo Andromeda** prioriza creatividades que generan engagement en los primeros 3 segundos.\n\n**Para piezas estáticas (Feed):**\n- Resolución: 1080x1080px · Ratio 1:1\n- Texto máximo: 20% del área\n- CTA claro: mínimo 40px de altura en mobile\n\n**Para Historias:**\n- 1080x1920px · Ratio 9:16\n- Zona segura: deja 250px arriba y abajo sin elementos clave\n\n**CTR promedio por vertical de apuestas en LATAM:** 1.8% - 3.2%\n\n⚠️ *Modo simulación activo. Conecta tu API Key para respuestas personalizadas.*`;
-      return NextResponse.json({ content: simResponse });
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+
+    if (!apiKey) {
+      return NextResponse.json({ content: "Error: No DeepSeek API Key found in environment." });
     }
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // Configurar cliente de OpenAI para usar DeepSeek
+    const deepseek = new OpenAI({ 
+      apiKey: apiKey,
+      baseURL: "https://api.deepseek.com"
+    });
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+    const response = await deepseek.chat.completions.create({
+      model: "deepseek-chat", 
       messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
       max_tokens: 1000,
     });
 
     return NextResponse.json({ content: response.choices[0].message.content });
   } catch (error: unknown) {
-    console.error("Error in AI Chat:", error);
+    console.error("Error in DeepSeek Chat:", error);
     const message = error instanceof Error ? error.message : "Error interno del chatbot.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
