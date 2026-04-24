@@ -2,45 +2,36 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
-import { Eye, EyeOff, LogIn, Shield, ChevronRight, Lock } from 'lucide-react'
-import Image from 'next/image'
+import { Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
-  const { users, login } = useAuth()
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const { login, loginAsGuest } = useAuth()
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [shake, setShake] = useState(false)
-  const passwordRef = useRef<HTMLInputElement>(null)
+  const usernameRef = useRef<HTMLInputElement>(null)
 
-  const selectedUser = users.find(u => u.id === selectedUserId)
-
-  // Auto-focus password when user is selected
   useEffect(() => {
-    if (selectedUserId) {
-      setTimeout(() => passwordRef.current?.focus(), 150)
-    }
-  }, [selectedUserId])
+    usernameRef.current?.focus()
+  }, [])
 
   const handleLogin = async () => {
-    if (!selectedUserId) {
-      setError('Selecciona un perfil para continuar')
+    if (!username) {
+      setError('Ingresa tu usuario')
       return
     }
     if (!password) {
-      setError('Ingresa la contraseña')
+      setError('Ingresa tu contraseña')
       return
     }
 
     setLoading(true)
     setError('')
 
-    // Brief delay for UX feel
-    await new Promise(r => setTimeout(r, 600))
-
-    const result = login(selectedUserId, password)
+    const result = await login(username, password)
 
     if (!result.success) {
       setLoading(false)
@@ -48,121 +39,84 @@ export default function LoginPage() {
       setShake(true)
       setTimeout(() => setShake(false), 500)
       setPassword('')
-      passwordRef.current?.focus()
     }
-    // If success, parent will unmount this component
+  }
+
+  const handleGuestLogin = () => {
+    loginAsGuest()
   }
 
   return (
-    <div className="min-h-screen bg-sidebar flex items-center justify-center p-4 relative overflow-hidden">
-
-      {/* Background decoration */}
+    <div className="min-h-screen bg-brand-surface flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full bg-brand/5 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full bg-pink-500/5 blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-brand/3 blur-3xl" />
-        {/* Grid overlay */}
-        <div
-          className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage: 'linear-gradient(rgba(14,165,233,1) 1px, transparent 1px), linear-gradient(90deg, rgba(14,165,233,1) 1px, transparent 1px)',
-            backgroundSize: '60px 60px'
-          }}
-        />
+        <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full bg-brand/3 blur-3xl" />
       </div>
 
-      {/* Card */}
+      {/* Login Card */}
       <div
-        className={`relative w-full max-w-md animate-slide-up ${shake ? 'animate-[shake_0.4s_ease-in-out]' : ''}`}
+        className={`relative w-full max-w-md`}
         style={shake ? { animation: 'shake 0.4s ease-in-out' } : {}}
       >
-        {/* Logo header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="w-14 h-14 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center overflow-hidden shadow-2xl">
+        {/* Logo and Branding */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-2xl bg-brand flex items-center justify-center shadow-lg overflow-hidden">
               <img
-                src="/logo/logo.png"
-                alt="Métricas IA"
-                className="w-10 h-10 object-contain"
+                src="/logo/ganaplay.png"
+                alt="GanaPlay"
+                className="w-12 h-12 object-contain"
               />
             </div>
-            <div className="text-left">
-              <h1 className="text-white font-bold text-2xl tracking-tight leading-none">Métricas IA</h1>
-              <p className="text-brand text-[11px] font-bold uppercase tracking-widest mt-0.5">SportOps Platform</p>
-            </div>
           </div>
-          <p className="text-white/30 text-sm font-medium">
-            Sistema de gestión de eventos deportivos
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
+            GanaPlay
+          </h1>
+          <p className="text-brand font-semibold text-sm tracking-wider">
+            PLATAFORMA DEPORTIVA
+          </p>
+          <p className="text-gray-600 text-sm font-medium mt-3">
+            Sistema profesional de gestión de eventos
           </p>
         </div>
 
-        {/* Login panel */}
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
-
-          {/* Step 1: Select user */}
+        {/* Login Form */}
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
+          {/* Username Input */}
           <div className="mb-5">
-            <p className="text-white/50 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${selectedUser ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/50'}`}>
-                {selectedUser ? '✓' : '1'}
-              </span>
-              Selecciona tu perfil
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {users.map(u => (
-                <button
-                  key={u.id}
-                  onClick={() => {
-                    setSelectedUserId(u.id)
-                    setError('')
-                  }}
-                  className={`
-                    relative p-4 rounded-2xl border transition-all duration-200 text-left group active:scale-[0.97]
-                    ${selectedUserId === u.id
-                      ? 'border-brand/50 bg-brand/10 ring-2 ring-brand/30'
-                      : 'border-white/10 bg-white/3 hover:bg-white/8 hover:border-white/20'
-                    }
-                  `}
-                >
-                  {/* Selection indicator */}
-                  {selectedUserId === u.id && (
-                    <div className="absolute top-2.5 right-2.5 w-4 h-4 rounded-full bg-brand flex items-center justify-center">
-                      <span className="text-white text-[9px] font-black">✓</span>
-                    </div>
-                  )}
-
-                  {/* Avatar */}
-                  <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${u.color} flex items-center justify-center text-white text-xs font-black mb-3 shadow-lg`}>
-                    {u.avatar}
-                  </div>
-
-                  {/* Name & role */}
-                  <p className={`text-sm font-bold leading-tight transition-colors ${selectedUserId === u.id ? 'text-white' : 'text-white/70 group-hover:text-white'}`}>
-                    {u.name}
-                  </p>
-                  <p className={`text-[10px] font-medium mt-0.5 leading-tight transition-colors ${selectedUserId === u.id ? 'text-brand' : 'text-white/30 group-hover:text-white/50'}`}>
-                    {u.id === 'ceo' ? 'CEO' : 'Marketing'}
-                  </p>
-                </button>
-              ))}
-            </div>
+            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
+              Usuario
+            </label>
+            <input
+              ref={usernameRef}
+              type="text"
+              value={username}
+              onChange={e => {
+                setUsername(e.target.value)
+                if (error) setError('')
+              }}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              placeholder="Ingresa tu usuario"
+              disabled={loading}
+              className={`
+                w-full px-4 py-3 rounded-xl text-sm border transition-all outline-none
+                ${error
+                  ? 'border-red-500/50 ring-2 ring-red-500/20 bg-red-50'
+                  : 'border-gray-200 focus:border-brand focus:ring-2 focus:ring-brand/20 focus:bg-white'
+                }
+                ${loading ? 'opacity-60 cursor-not-allowed bg-gray-50' : 'bg-white'}
+              `}
+            />
           </div>
 
-          {/* Step 2: Password */}
-          <div className="mb-4">
-            <p className={`text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2 transition-colors ${selectedUser ? 'text-white/50' : 'text-white/20'}`}>
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${selectedUser ? 'bg-white/10 text-white/50' : 'bg-white/5 text-white/20'}`}>
-                2
-              </span>
-              Contraseña de acceso
-            </p>
-
+          {/* Password Input */}
+          <div className="mb-6">
+            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
+              Contraseña
+            </label>
             <div className="relative">
-              <Lock
-                size={15}
-                className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${selectedUser ? 'text-brand/60' : 'text-white/20'}`}
-              />
               <input
-                ref={passwordRef}
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={e => {
@@ -170,77 +124,83 @@ export default function LoginPage() {
                   if (error) setError('')
                 }}
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                placeholder={selectedUser ? "Ingresa la contraseña..." : "Primero selecciona un perfil"}
-                disabled={!selectedUser}
+                placeholder="Ingresa tu contraseña"
+                disabled={loading}
                 className={`
-                  w-full pr-10 pl-10 py-3 rounded-xl text-sm transition-all outline-none
-                  ${selectedUser
-                    ? 'bg-white/8 border border-white/15 text-white placeholder:text-white/25 focus:border-brand/50 focus:ring-2 focus:ring-brand/20 focus:bg-white/10'
-                    : 'bg-white/3 border border-white/5 text-white/20 placeholder:text-white/15 cursor-not-allowed'
+                  w-full px-4 py-3 rounded-xl text-sm border transition-all outline-none pr-11
+                  ${error
+                    ? 'border-red-500/50 ring-2 ring-red-500/20 bg-red-50'
+                    : 'border-gray-200 focus:border-brand focus:ring-2 focus:ring-brand/20 focus:bg-white'
                   }
-                  ${error ? 'border-red-500/50 ring-2 ring-red-500/20' : ''}
+                  ${loading ? 'opacity-60 cursor-not-allowed bg-gray-50' : 'bg-white'}
                 `}
               />
-              {selectedUser && (
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(v => !v)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70 transition-colors"
-                >
-                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                disabled={loading}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
           </div>
 
-          {/* Error */}
+          {/* Error Message */}
           {error && (
-            <div className="mb-4 flex items-center gap-2 text-red-400 text-xs font-medium px-3 py-2.5 bg-red-500/10 border border-red-500/20 rounded-xl animate-fade-in">
-              <Shield size={13} className="flex-shrink-0" />
-              {error}
+            <div className="mb-6 flex items-center gap-3 text-red-700 text-sm px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+              <AlertCircle size={18} className="flex-shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
-          {/* Login button */}
+          {/* Login Button */}
           <button
             onClick={handleLogin}
-            disabled={loading || !selectedUser}
+            disabled={loading || !username || !password}
             className={`
-              w-full py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98]
-              ${selectedUser && !loading
-                ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-brand hover:brightness-110'
-                : 'bg-white/5 text-white/25 cursor-not-allowed border border-white/5'
+              w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] mb-3
+              ${loading || !username || !password
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-lg shadow-brand/30 hover:brightness-110'
               }
             `}
           >
             {loading ? (
               <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 Verificando...
               </>
             ) : (
               <>
-                <LogIn size={16} />
-                Ingresar al Sistema
+                <LogIn size={18} />
+                Entrar
               </>
             )}
           </button>
 
-          {/* Hint */}
-          <p className="text-center text-white/15 text-[10px] font-medium mt-4 flex items-center justify-center gap-1.5">
-            <Lock size={9} />
-            Acceso restringido · Métricas IA © 2026
+          {/* Guest Login Button */}
+          <button
+            onClick={handleGuestLogin}
+            disabled={loading}
+            className="w-full py-3 rounded-xl text-sm font-semibold text-brand border-2 border-brand/30 hover:border-brand/60 hover:bg-brand/5 transition-all active:scale-[0.98] disabled:opacity-50"
+          >
+            Entrar como invitado
+          </button>
+
+          {/* Footer */}
+          <p className="text-center text-gray-400 text-[11px] font-medium mt-6">
+            Acceso seguro · Todos los datos protegidos · GanaPlay © 2026
           </p>
         </div>
 
-        {/* Bottom badge */}
+        {/* Live indicator */}
         <div className="flex items-center justify-center gap-2 mt-6">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-white/25 text-[11px] font-medium">Sistema seguro · Todos los datos cifrados</span>
+          <div className="w-2 h-2 rounded-full bg-brand animate-pulse" />
+          <span className="text-gray-500 text-[12px] font-medium">Plataforma operativa</span>
         </div>
       </div>
 
-      {/* Shake keyframe via style tag */}
       <style>{`
         @keyframes shake {
           0%, 100% { transform: translateX(0); }
@@ -251,7 +211,6 @@ export default function LoginPage() {
           75% { transform: translateX(-4px); }
           90% { transform: translateX(4px); }
         }
-        .shake { animation: shake 0.4s ease-in-out; }
       `}</style>
     </div>
   )

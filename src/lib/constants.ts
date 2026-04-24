@@ -47,8 +47,8 @@ export const PRIORITY_CONFIG: Record<EventPriority, { label: string; color: stri
 
 export const CALENDAR_EVENT_COLORS: Record<EventStatus, string> = {
   pendiente: 'bg-amber-400 hover:bg-amber-500',
-  arte_solicitado: 'bg-sky-500 hover:bg-sky-600',
-  declinado: 'bg-slate-400 hover:bg-slate-500',
+  arte_solicitado: 'bg-brand hover:bg-brand-dark',
+  declinado: 'bg-gray-400 hover:bg-gray-500',
 }
 
 export const DEFAULT_FILTERS = {

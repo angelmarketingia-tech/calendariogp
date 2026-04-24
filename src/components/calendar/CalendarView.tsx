@@ -11,9 +11,9 @@ import { useEvents } from '@/context/EventsContext'
 import { formatTime, cn, isUrgent } from '@/lib/utils'
 import { CALENDAR_EVENT_COLORS, DAYS_ES, MONTHS_ES } from '@/lib/constants'
 import type { SportEvent } from '@/lib/types'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Sun } from 'lucide-react'
 
-type CalendarMode = 'month' | 'week'
+type CalendarMode = 'month' | 'week' | 'day'
 
 function EventPill({ event, onClick }: { event: SportEvent; onClick: () => void }) {
   const urgent = isUrgent(event.fecha_hora, 24) && event.estado === 'pendiente'
@@ -37,6 +37,14 @@ export default function CalendarView() {
   const { events, selectEvent } = useEvents()
   const [mode, setMode] = useState<CalendarMode>('month')
   const [currentDate, setCurrentDate] = useState(new Date())
+
+  // Day view: events for a specific single date
+  const dayViewEvents = useMemo(() => {
+    const key = format(currentDate, 'yyyy-MM-dd')
+    return events
+      .filter(e => format(new Date(e.fecha_hora), 'yyyy-MM-dd') === key)
+      .sort((a, b) => new Date(a.fecha_hora).getTime() - new Date(b.fecha_hora).getTime())
+  }, [events, currentDate])
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, SportEvent[]>()
@@ -69,17 +77,21 @@ export default function CalendarView() {
 
   const prev = () => {
     if (mode === 'month') setCurrentDate(d => subMonths(d, 1))
-    else setCurrentDate(d => subWeeks(d, 1))
+    else if (mode === 'week') setCurrentDate(d => subWeeks(d, 1))
+    else setCurrentDate(d => { const n = new Date(d); n.setDate(d.getDate() - 1); return n })
   }
 
   const next = () => {
     if (mode === 'month') setCurrentDate(d => addMonths(d, 1))
-    else setCurrentDate(d => addWeeks(d, 1))
+    else if (mode === 'week') setCurrentDate(d => addWeeks(d, 1))
+    else setCurrentDate(d => { const n = new Date(d); n.setDate(d.getDate() + 1); return n })
   }
 
   const title = mode === 'month'
     ? `${MONTHS_ES[currentDate.getMonth()]} ${currentDate.getFullYear()}`
-    : `Semana del ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'd MMM', { locale: es })}`
+    : mode === 'week'
+    ? `Semana del ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'd MMM', { locale: es })}`
+    : format(currentDate, "EEEE d 'de' MMMM", { locale: es })
 
   const dayHeaders = DAYS_ES.slice(1).concat(DAYS_ES[0])
 
@@ -130,31 +142,34 @@ export default function CalendarView() {
 
         {/* Mode toggle */}
         <div className="ml-auto flex bg-slate-100 rounded-xl p-1 gap-1">
-          {(['month', 'week'] as const).map(m => (
+          {([['month', 'Mes'], ['week', 'Semana'], ['day', 'Hoy']] as const).map(([m, lbl]) => (
             <button
               key={m}
-              onClick={() => setMode(m)}
+              onClick={() => { setMode(m); if (m === 'day') setCurrentDate(new Date()) }}
               className={cn(
-                'px-4 py-1.5 rounded-lg text-xs font-bold transition-all',
+                'px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1',
                 mode === m
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-500 hover:text-slate-700'
               )}
             >
-              {m === 'month' ? 'Mes' : 'Semana'}
+              {m === 'day' && <Sun size={11} />}
+              {lbl}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Day headers */}
-      <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50">
-        {dayHeaders.map(day => (
-          <div key={day} className="px-2 py-2 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            {day}
-          </div>
-        ))}
-      </div>
+      {/* Day headers — only in month/week mode */}
+      {mode !== 'day' && (
+        <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50">
+          {dayHeaders.map(day => (
+            <div key={day} className="px-2 py-2 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              {day}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Month View */}
       {mode === 'month' && (
@@ -284,6 +299,84 @@ export default function CalendarView() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Day View */}
+      {mode === 'day' && (
+        <div className="p-5">
+          {dayViewEvents.length === 0 ? (
+            <div className="text-center py-16 flex flex-col items-center gap-3">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
+                <Sun size={22} className="text-slate-300" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-500 text-sm">Sin eventos para hoy</p>
+                <p className="text-slate-400 text-xs mt-0.5">Navega para ver otros días</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {dayViewEvents.map(event => {
+                const urgent = isUrgent(event.fecha_hora, 24) && event.estado === 'pendiente'
+                return (
+                  <button
+                    key={event.id}
+                    onClick={() => selectEvent(event.id)}
+                    className={cn(
+                      'w-full text-left p-4 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99]',
+                      event.estado === 'pendiente' && 'bg-amber-50 border-amber-200',
+                      event.estado === 'arte_solicitado' && 'bg-brand/5 border-brand/20',
+                      event.estado === 'declinado' && 'bg-slate-50 border-slate-200',
+                      urgent && 'ring-2 ring-red-300'
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl flex-shrink-0">{event.sport?.icon ?? '🏅'}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-slate-900 text-sm leading-tight">
+                            {event.nombre_evento}
+                          </p>
+                          {urgent && (
+                            <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-md font-black border border-red-200 animate-pulse">
+                              URGENTE
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 flex-wrap">
+                          <span className={cn(
+                            'text-[10px] font-bold',
+                            event.estado === 'pendiente' && 'text-amber-600',
+                            event.estado === 'arte_solicitado' && 'text-brand',
+                            event.estado === 'declinado' && 'text-slate-400',
+                          )}>
+                            {formatTime(event.fecha_hora)}
+                          </span>
+                          {event.competition?.name && (
+                            <span className="text-[11px] text-slate-400">{event.competition.name}</span>
+                          )}
+                          {event.pais && (
+                            <span className="text-[11px] text-slate-400">{event.pais}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <span className={cn(
+                          'text-[10px] px-2 py-1 rounded-lg font-bold border',
+                          event.prioridad === 'alta' && 'bg-red-50 text-red-600 border-red-200',
+                          event.prioridad === 'media' && 'bg-orange-50 text-orange-600 border-orange-200',
+                          event.prioridad === 'baja' && 'bg-green-50 text-green-600 border-green-200',
+                        )}>
+                          {event.prioridad}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
