@@ -1,26 +1,23 @@
-import type { Metadata } from 'next'
-import './globals.css'
-import { EventsProvider } from '@/context/EventsContext'
-import { AuthProvider } from '@/context/AuthContext'
-import AppShell from '@/components/layout/AppShell'
+import "./globals.css";
 
-export const metadata: Metadata = {
-  title: 'GanaPlay | Plataforma Deportiva',
-  description: 'Plataforma profesional de gestión de eventos deportivos y sincronización automática',
-}
+export const metadata = {
+  title: "GanaPlay Diseño",
+  description: "Communication platform for Designers and Digital Traffickers",
+};
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="es">
+      <head>
+        <link rel="icon" href="/logo.png" />
+      </head>
       <body>
-        <AuthProvider>
-          <EventsProvider>
-            <AppShell>
-              {children}
-            </AppShell>
-          </EventsProvider>
-        </AuthProvider>
+        {children}
       </body>
     </html>
-  )
+  );
 }
