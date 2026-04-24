@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useEvents } from '@/context/EventsContext'
+import { useToast } from '@/components/ui/Toast'
 import { formatDateTime, formatDate, cn } from '@/lib/utils'
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/lib/constants'
 import StatusBadge from './StatusBadge'
@@ -15,6 +16,7 @@ import {
 
 export default function EventModal() {
   const { selectedEventId, selectEvent, getEvent, updateStatus, updatePriority, updateResponsable, addNote, users } = useEvents()
+  const { showToast } = useToast()
   const [note, setNote] = useState('')
   const [showHistory, setShowHistory] = useState(false)
 
@@ -40,24 +42,27 @@ export default function EventModal() {
     setNote('')
   }
 
-  const statusActions: { status: EventStatus; label: string; icon: React.ReactNode; classes: string }[] = [
+  const statusActions: { status: EventStatus; label: string; icon: React.ReactNode; classes: string; toast: string }[] = [
     {
       status: 'arte_solicitado',
       label: 'Arte Solicitado',
       icon: <CheckCircle2 size={15} />,
       classes: 'bg-brand text-white hover:bg-brand-dark shadow-brand',
+      toast: '🎨 Arte marcado como solicitado',
     },
     {
       status: 'declinado',
       label: 'Declinar',
       icon: <XCircle size={15} />,
       classes: 'bg-white hover:bg-red-50 text-red-600 border border-red-200',
+      toast: '✖️ Evento declinado',
     },
     {
       status: 'pendiente',
       label: 'Volver a Pendiente',
       icon: <RotateCcw size={15} />,
       classes: 'bg-white hover:bg-amber-50 text-amber-700 border border-amber-200',
+      toast: '🕐 Evento vuelto a pendiente',
     },
   ]
   const availableActions = statusActions.filter(a => a.status !== event.estado)
@@ -75,7 +80,7 @@ export default function EventModal() {
       {/* Modal */}
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-slide-up">
         {/* Status stripe */}
-        <div className={`h-1 w-full ${cfg.dot.replace('bg-', 'bg-').replace('400', '400').replace('500', '500')}`} />
+        <div className={`h-1 w-full ${cfg.dot}`} />
 
         {/* Header */}
         <div className="flex items-start gap-4 px-6 py-5 border-b border-slate-100">
@@ -258,7 +263,10 @@ export default function EventModal() {
           {availableActions.map(action => (
             <button
               key={action.status}
-              onClick={() => updateStatus(event.id, action.status)}
+              onClick={() => {
+                updateStatus(event.id, action.status)
+                showToast(action.toast, action.status === 'declinado' ? 'error' : 'success')
+              }}
               className={cn(
                 'flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95',
                 action.classes

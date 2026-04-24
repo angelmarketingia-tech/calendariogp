@@ -7,9 +7,11 @@ import { MOCK_SPORTS, MOCK_COMPETITIONS } from '@/lib/mock-data'
 import type { SportEvent } from '@/lib/types'
 import { RefreshCw, Upload, CheckCircle2, AlertTriangle, X, CloudLightning, FileUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useToast } from '@/components/ui/Toast'
 
 export default function SyncPanel() {
-  const { events, addEvent } = useEvents()
+  const { events, addEvent, refreshFromSupabase, source } = useEvents()
+  const { showToast } = useToast()
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const [preview, setPreview] = useState<SportEvent[]>([])
@@ -97,38 +99,62 @@ export default function SyncPanel() {
     setStatus('success')
     setMessage(`✓ ${added} eventos importados (${preview.length - added} ya existían)`)
     setPreview([])
+    showToast(`✅ ${added} eventos importados correctamente`, 'success')
   }
 
   return (
     <>
-      <div className="card p-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand/20 to-brand/5 border border-brand/20 flex items-center justify-center flex-shrink-0">
-            <CloudLightning size={18} className="text-brand" />
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-11 h-11 rounded-lg bg-brand/10 border border-brand/20 flex items-center justify-center flex-shrink-0">
+            <CloudLightning size={20} className="text-brand" />
           </div>
-          <div>
-            <h3 className="font-bold text-slate-900 text-sm tracking-tight">Sincronización</h3>
-            <p className="text-slate-400 text-[11px] font-medium">Canal con el Co-working Agent</p>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-gray-900 text-sm">Sincronización CloudCode</h3>
+            <p className="text-gray-500 text-xs font-medium">Importar agenda deportiva automáticamente</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className={cn(
+              'text-[8px] font-bold px-2 py-1 rounded-md border',
+              source === 'supabase'
+                ? 'bg-green-50 text-green-700 border-green-200'
+                : 'bg-gray-100 text-gray-500 border-gray-200'
+            )}>
+              {source === 'supabase' ? '● EN VIVO' : '○ LOCAL'}
+            </span>
+            <button
+              onClick={async () => {
+                setStatus('loading')
+                setMessage('Actualizando desde la nube...')
+                await refreshFromSupabase()
+                setStatus('success')
+                setMessage('✓ Datos actualizados correctamente')
+              }}
+              title="Recargar desde Supabase"
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-brand transition-colors"
+            >
+              <RefreshCw size={14} />
+            </button>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="grid grid-cols-2 gap-2 mb-4">
           <button
             onClick={handleAutoSync}
             disabled={status === 'loading'}
             className={cn(
-              'flex flex-col items-center gap-2 p-3 rounded-xl border transition-all text-center disabled:opacity-50 group active:scale-95',
-              'border-brand/20 bg-brand/5 hover:bg-brand/10 hover:border-brand/40 shadow-sm'
+              'flex flex-col items-center gap-2 p-3 rounded-lg border transition-all text-center disabled:opacity-50 group active:scale-95',
+              'border-brand/25 bg-brand/8 hover:bg-brand/12 hover:border-brand/40 shadow-sm'
             )}
           >
-            <div className="w-9 h-9 rounded-full bg-brand/10 flex items-center justify-center text-brand group-hover:scale-110 transition-transform">
-              <RefreshCw size={17} className={status === 'loading' ? 'animate-spin' : ''} />
+            <div className="w-10 h-10 rounded-full bg-brand/15 flex items-center justify-center text-brand group-hover:scale-110 transition-transform">
+              <RefreshCw size={18} className={status === 'loading' ? 'animate-spin' : ''} />
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-800">Auto-Sync</p>
-              <p className="text-[10px] text-slate-400 font-medium">Directorio</p>
+              <p className="text-xs font-bold text-gray-800">Auto-Sync</p>
+              <p className="text-[10px] text-gray-500 font-medium">Detectar archivos</p>
             </div>
           </button>
 
@@ -136,16 +162,16 @@ export default function SyncPanel() {
             onClick={() => fileRef.current?.click()}
             disabled={status === 'loading'}
             className={cn(
-              'flex flex-col items-center gap-2 p-3 rounded-xl border transition-all text-center disabled:opacity-50 group active:scale-95',
-              'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 shadow-sm'
+              'flex flex-col items-center gap-2 p-3 rounded-lg border transition-all text-center disabled:opacity-50 group active:scale-95',
+              'border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300 shadow-sm'
             )}
           >
-            <div className="w-9 h-9 rounded-full bg-slate-200/70 flex items-center justify-center text-slate-500 group-hover:scale-110 transition-transform">
-              <FileUp size={17} />
+            <div className="w-10 h-10 rounded-full bg-gray-200/60 flex items-center justify-center text-gray-600 group-hover:scale-110 transition-transform">
+              <FileUp size={18} />
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-800">Manual</p>
-              <p className="text-[10px] text-slate-400 font-medium">Subir .md</p>
+              <p className="text-xs font-bold text-gray-800">Manual</p>
+              <p className="text-[10px] text-gray-500 font-medium">Subir archivo</p>
             </div>
           </button>
         </div>
@@ -161,26 +187,27 @@ export default function SyncPanel() {
         {/* Status */}
         {status !== 'idle' && (
           <div className={cn(
-            'flex items-start gap-2 text-xs rounded-xl px-3 py-2 animate-fade-in',
-            status === 'error' ? 'bg-red-50 text-red-600 border border-red-100' :
-            status === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-            'bg-slate-50 text-slate-600 border border-slate-100'
+            'flex items-start gap-2.5 text-xs rounded-lg px-3 py-2.5 animate-fade-in',
+            status === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
+            status === 'success' ? 'bg-green-50 text-green-700 border border-green-200' :
+            'bg-gray-50 text-gray-700 border border-gray-200'
           )}>
             <span className="flex-shrink-0 mt-0.5">
-              {status === 'loading' && <RefreshCw size={13} className="animate-spin text-slate-500" />}
-              {status === 'success' && <CheckCircle2 size={13} className="text-emerald-500" />}
-              {status === 'error' && <AlertTriangle size={13} className="text-red-500" />}
+              {status === 'loading' && <RefreshCw size={13} className="animate-spin text-gray-600" />}
+              {status === 'success' && <CheckCircle2 size={13} className="text-green-600" />}
+              {status === 'error' && <AlertTriangle size={13} className="text-red-600" />}
             </span>
-            <span className="leading-relaxed">{message}</span>
+            <span className="leading-relaxed font-medium">{message}</span>
           </div>
         )}
 
-        {/* API hint */}
-        <div className="mt-3 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Endpoint Co-working</p>
-          <code className="text-[10px] text-slate-500 block leading-relaxed break-all">
-            POST localhost:3000/api/sync
+        {/* API endpoint info */}
+        <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Endpoint Público</p>
+          <code className="text-[10px] text-gray-600 block leading-relaxed break-all font-mono">
+            POST calendariogp.vercel.app/api/sync
           </code>
+          <p className="text-[10px] text-gray-500 mt-2">Integración con CloudCode para actualización automática</p>
         </div>
       </div>
 
@@ -188,32 +215,32 @@ export default function SyncPanel() {
       {showPreview && preview.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-slide-up">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-brand/10 flex items-center justify-center">
-                  <Upload size={17} className="text-brand" />
+                <div className="w-10 h-10 rounded-lg bg-brand/10 flex items-center justify-center">
+                  <Upload size={18} className="text-brand" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-sm">Vista Previa de Importación</h3>
-                  <p className="text-slate-400 text-xs">{preview.length} eventos detectados</p>
+                  <h3 className="font-bold text-gray-900 text-sm">Vista Previa - {preview.length} eventos</h3>
+                  <p className="text-gray-500 text-xs font-medium">Revisa antes de importar</p>
                 </div>
               </div>
               <button
                 onClick={() => { setShowPreview(false); setStatus('idle') }}
-                className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <X size={18} />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {preview.slice(0, 30).map((e, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors">
-                    <span className="text-base w-7 text-center flex-shrink-0">{e.sport?.icon ?? '🏅'}</span>
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">
+                    <span className="text-lg w-7 text-center flex-shrink-0">{e.sport?.icon ?? '⚽'}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-800 truncate">{e.nombre_evento}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      <p className="text-sm font-semibold text-gray-800 truncate">{e.nombre_evento}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
                         {new Date(e.fecha_hora).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
                         {' · '}
                         {new Date(e.fecha_hora).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
@@ -221,34 +248,34 @@ export default function SyncPanel() {
                         {e.pais}
                       </p>
                     </div>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
-                      e.prioridad === 'alta' ? 'bg-red-50 text-red-600 border-red-200' :
-                      e.prioridad === 'media' ? 'bg-orange-50 text-orange-600 border-orange-200' :
-                      'bg-green-50 text-green-600 border-green-200'
+                    <span className={`text-[10px] px-2 py-1 rounded-md font-bold border ${
+                      e.prioridad === 'alta' ? 'bg-red-50 text-red-700 border-red-200' :
+                      e.prioridad === 'media' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                      'bg-green-50 text-green-700 border-green-200'
                     }`}>{e.prioridad}</span>
                   </div>
                 ))}
                 {preview.length > 30 && (
-                  <p className="text-center text-slate-400 text-sm py-2 font-medium">
+                  <p className="text-center text-gray-500 text-sm py-3 font-medium">
                     + {preview.length - 30} eventos más...
                   </p>
                 )}
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/50 flex gap-3">
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex gap-3">
               <button
                 onClick={() => { setShowPreview(false); setStatus('idle') }}
-                className="btn-secondary flex-1 justify-center"
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-100 transition-colors flex-1"
               >
                 Cancelar
               </button>
               <button
                 onClick={confirmImport}
-                className="btn-primary flex-1 justify-center"
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-brand to-brand-dark text-white font-semibold hover:brightness-110 transition-all active:scale-95 flex-1"
               >
-                <Upload size={15} />
-                Importar {preview.length} eventos
+                <Upload size={16} />
+                Importar {preview.length}
               </button>
             </div>
           </div>

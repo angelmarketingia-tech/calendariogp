@@ -18,9 +18,13 @@ function SortIcon({ field, current, direction }: { field: string; current: strin
     : <ArrowDown size={12} className="text-brand" />
 }
 
-export default function EventsTable() {
+interface EventsTableProps {
+  initialFilters?: EventFilters
+}
+
+export default function EventsTable({ initialFilters }: EventsTableProps = {}) {
   const { events, selectEvent } = useEvents()
-  const [filters, setFilters] = useState<EventFilters>(DEFAULT_FILTERS)
+  const [filters, setFilters] = useState<EventFilters>(initialFilters ?? DEFAULT_FILTERS)
   const [sortField, setSortField] = useState<SortField>('fecha_hora')
   const [sortDir, setSortDir] = useState<SortDirection>('asc')
 

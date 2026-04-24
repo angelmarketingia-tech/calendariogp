@@ -2,10 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Calendar, TableProperties, Plus, LogOut, Database } from 'lucide-react'
+import { LayoutDashboard, Calendar, TableProperties, Plus, LogOut, Database, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEvents } from '@/context/EventsContext'
-import { useAuth } from '@/context/AuthContext'
+import { useAuth, canViewAdmin } from '@/context/AuthContext'
 import { useMemo, useState } from 'react'
 import { isUrgent } from '@/lib/utils'
 import AddEventModal from '@/components/events/AddEventModal'
@@ -40,38 +40,41 @@ export default function Sidebar() {
 
   return (
     <>
-      <aside className="w-64 flex-shrink-0 flex flex-col h-screen bg-sidebar border-r border-white/5 shadow-2xl">
+      <aside className="w-64 flex-shrink-0 flex flex-col h-screen bg-sidebar border-r border-brand/10 shadow-lg">
 
         {/* Brand Header */}
-        <div className="p-5 pb-4">
+        <div className="p-6 pb-5 border-b border-brand/10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center overflow-hidden shadow-inner flex-shrink-0">
-              <img src="/logo/logo.png" alt="Métricas IA" className="w-8 h-8 object-contain" />
+            <div className="w-11 h-11 rounded-xl bg-brand flex items-center justify-center overflow-hidden shadow-md flex-shrink-0">
+              <img src="/logo/ganaplay.png" alt="GanaPlay" className="w-8 h-8 object-contain" />
             </div>
             <div>
-              <h1 className="text-white font-bold text-[15px] tracking-tight leading-none">Métricas IA</h1>
-              <p className="text-[10px] text-brand font-semibold uppercase tracking-widest mt-0.5">SportOps</p>
+              <h1 className="text-white font-bold text-base tracking-tight leading-tight">GanaPlay</h1>
+              <p className="text-[10px] text-brand-light font-semibold uppercase tracking-wider mt-0.5">
+                {user?.role === 'superadmin' ? 'Admin' : user?.role === 'admin' ? 'Gestor' : 'Operador'}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Live indicator */}
-        <div className="mx-4 mb-4 px-3 py-2 rounded-xl bg-white/3 border border-white/5 flex items-center gap-2">
+        {/* Status indicator */}
+        <div className="mx-4 my-4 px-3 py-2.5 rounded-lg bg-brand/10 border border-brand/20 flex items-center gap-2">
           <span className="relative flex h-2 w-2 flex-shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-light opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-light" />
           </span>
-          <span className="text-white/50 text-[11px] font-medium">Sistema activo</span>
+          <span className="text-white/70 text-xs font-medium flex-1">Sistema activo</span>
           {urgentCount > 0 && (
-            <span className="ml-auto bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">
-              {urgentCount} urgente{urgentCount > 1 ? 's' : ''}
+            <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold animate-pulse flex items-center gap-1">
+              <AlertTriangle size={12} />
+              {urgentCount}
             </span>
           )}
         </div>
 
-        {/* Nav */}
+        {/* Navigation */}
         <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto scrollbar-hide">
-          <p className="text-[10px] text-white/20 font-bold uppercase tracking-widest px-3 pb-2 pt-1">Navegación</p>
+          <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest px-3 py-2.5">Menú Principal</p>
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href
             return (
@@ -79,21 +82,21 @@ export default function Sidebar() {
                 key={href}
                 href={href}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group',
                   active
-                    ? 'bg-gradient-to-r from-brand/20 to-brand/10 text-brand ring-1 ring-brand/20 shadow-sm'
-                    : 'text-white/50 hover:bg-white/5 hover:text-white'
+                    ? 'bg-brand/20 text-brand-light border border-brand/30 shadow-sm'
+                    : 'text-white/60 hover:text-white/80 hover:bg-white/5'
                 )}
               >
-                <Icon size={17} className={active ? 'text-brand' : ''} />
-                {label}
+                <Icon size={18} className={cn('transition-colors', active ? 'text-brand-light' : 'group-hover:text-brand-light')} />
+                <span className="flex-1">{label}</span>
                 {href === '/' && urgentCount > 0 && (
-                  <span className="ml-auto bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                  <span className="bg-red-500 text-white text-[9px] px-2 py-1 rounded-md font-bold">
                     {urgentCount}
                   </span>
                 )}
                 {href === '/events' && totalPending > 0 && (
-                  <span className="ml-auto bg-amber-500/20 text-amber-400 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-amber-500/20">
+                  <span className="bg-amber-500/20 text-amber-300 text-[9px] px-2 py-1 rounded-md font-bold border border-amber-500/20">
                     {totalPending}
                   </span>
                 )}
@@ -102,91 +105,73 @@ export default function Sidebar() {
           })}
         </nav>
 
-        {/* Quick Add */}
-        <div className="px-3 pb-3 pt-2 border-t border-white/5">
-          <button
-            onClick={() => setShowAdd(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5
-              bg-gradient-to-r from-brand to-brand-dark text-white text-sm font-semibold
-              rounded-xl shadow-brand hover:brightness-110 transition-all active:scale-[0.97]"
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            Nuevo Evento
-          </button>
-        </div>
+        {/* Admin section */}
+        {canViewAdmin(user?.role ?? 'guest') && (
+          <div className="px-3 py-3 border-t border-brand/10 space-y-2">
+            <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest px-3 py-2">Administración</p>
+            <button
+              onClick={() => setShowAdd(true)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 bg-gradient-to-r from-brand to-brand-dark text-white rounded-lg text-sm font-semibold hover:brightness-110 transition-all active:scale-[0.98] shadow-sm shadow-brand/20"
+            >
+              <Plus size={18} />
+              <span>Nuevo Evento</span>
+            </button>
 
-        {/* Notion Connect */}
-        <div className="px-3 pb-3">
-          <button
-            onClick={() => setShowNotionModal(true)}
-            className={cn(
-              'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border',
-              notionConnected
-                ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/15'
-                : 'bg-white/3 border-white/10 text-white/40 hover:bg-white/6 hover:text-white/60'
-            )}
-          >
-            <Database size={14} className={notionConnected ? 'text-emerald-400' : 'text-white/30'} />
-            <span className="flex-1 text-left">
-              {notionConnected ? 'Notion conectado' : 'Conectar Notion'}
-            </span>
-            {notionConnected && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
-            )}
-          </button>
-        </div>
-
-        {/* Stats chips */}
-        <div className="px-3 pb-3 grid grid-cols-2 gap-2">
-          <div className="bg-white/3 rounded-xl p-2.5 border border-white/5">
-            <p className="text-[10px] text-white/30 uppercase font-bold tracking-wider">Totales</p>
-            <p className="text-white font-bold text-lg leading-tight">{events.length}</p>
+            <button
+              onClick={() => setShowNotionModal(true)}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                notionConnected
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-white/5 text-white/60 hover:bg-white/10 border border-white/10'
+              )}
+            >
+              <Database size={18} />
+              <span>{notionConnected ? 'Notion' : 'Conectar'}</span>
+            </button>
           </div>
-          <div className="bg-white/3 rounded-xl p-2.5 border border-white/5">
-            <p className="text-[10px] text-amber-400/60 uppercase font-bold tracking-wider">Pendientes</p>
-            <p className="text-amber-400 font-bold text-lg leading-tight">{totalPending}</p>
-          </div>
-        </div>
+        )}
 
-        {/* User + Logout */}
-        <div className="px-3 pb-4 pt-1 border-t border-white/5">
+        {/* User footer */}
+        <div className="px-3 py-4 border-t border-brand/10 space-y-2">
+          <div className="flex items-center gap-3 px-3 py-3 bg-white/5 rounded-lg">
+            <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white text-sm bg-gradient-to-br', user?.color)}>
+              {user?.avatar}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white truncate">{user?.name}</p>
+              <p className="text-[10px] text-white/50 truncate">{user?.role}</p>
+            </div>
+          </div>
+
           {showLogoutConfirm ? (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 animate-fade-in">
-              <p className="text-white/70 text-xs font-medium mb-2 text-center">¿Cerrar sesión?</p>
+            <div className="space-y-2">
+              <p className="text-xs text-white/70 px-3 py-2">¿Confirmar salida?</p>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 py-1.5 rounded-lg text-xs font-bold text-white/50 hover:bg-white/5 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={logout}
-                  className="flex-1 py-1.5 rounded-lg text-xs font-bold text-red-400 bg-red-500/20 hover:bg-red-500/30 transition-colors"
+                  onClick={() => {
+                    logout()
+                  }}
+                  className="flex-1 px-3 py-2 bg-red-500/20 text-red-300 text-xs font-semibold rounded-lg hover:bg-red-500/30 transition-all"
                 >
                   Salir
+                </button>
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 px-3 py-2 bg-white/10 text-white/80 text-xs font-semibold rounded-lg hover:bg-white/20 transition-all"
+                >
+                  Cancelar
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-white/5 transition-colors group">
-              <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${user?.color ?? 'from-brand to-brand-dark'} flex items-center justify-center text-white text-[10px] font-black shadow-brand flex-shrink-0`}>
-                {user?.avatar ?? '?'}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-white text-xs font-semibold truncate leading-tight">{user?.name}</p>
-                <p className="text-white/30 text-[10px] font-medium truncate">{user?.role} · Métricas IA</p>
-              </div>
-
-              <button
-                onClick={() => setShowLogoutConfirm(true)}
-                className="p-1 rounded-lg text-white/15 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
-                title="Cerrar sesión"
-              >
-                <LogOut size={13} />
-              </button>
-            </div>
+            <button
+              onClick={() => setShowLogoutConfirm(true)}
+              className="w-full flex items-center gap-2 justify-center px-3 py-2 text-sm font-medium text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+            >
+              <LogOut size={16} />
+              <span>Salir</span>
+            </button>
           )}
         </div>
       </aside>

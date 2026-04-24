@@ -1,22 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { parseAgendaMarkdown } from '@/lib/markdown-parser'
+import { createClient } from '@supabase/supabase-js'
 import fs from 'fs'
 import path from 'path'
 
-// ──────────────────────────────────────────────────────────────────
-// POST /api/sync
-// El agente de Claude Co-working llama este endpoint con el contenido
-// del archivo Markdown de agenda deportiva.
-//
-// Formas de uso:
-//   1. POST con body { markdown: "contenido..." }
-//   2. POST con body { filepath: "ruta/al/archivo.md" }  (solo local)
-//   3. GET /api/sync?file=nombre.md  (busca en AGENDA_DIR)
-// ──────────────────────────────────────────────────────────────────
-
 const API_SECRET = process.env.API_SECRET
-// Directorio donde el co-working agent guarda las agendas
 const AGENDA_DIR = process.env.AGENDA_DIR ?? 'C:/Users/PC GAMER/Desktop/EeventosDepClaude'
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+function getSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null
+  return createClient(SUPABASE_URL, SUPABASE_KEY)
+}
 
 function authenticate(req: NextRequest): boolean {
   if (!API_SECRET) return true
@@ -33,12 +30,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     let markdown = ''
 
-    // Opción 1: markdown directo en el body
     if (body.markdown) {
       markdown = String(body.markdown)
-    }
-    // Opción 2: ruta de archivo local
-    else if (body.filepath) {
+    } else if (body.filepath) {
       try {
         markdown = fs.readFileSync(String(body.filepath), 'utf-8')
       } catch {
@@ -50,11 +44,61 @@ export async function POST(req: NextRequest) {
 
     const events = parseAgendaMarkdown(markdown)
 
+    // Guardar en Supabase para sincronización en tiempo real
+    const supabase = getSupabase()
+    let upserted = 0
+    let supabaseError: string | null = null
+
+    if (supabase && events.length > 0) {
+      const allRows = events.map(e => ({
+        id: e.id,
+        nombre_evento: e.nombre_evento,
+        sport_id: e.sport_id,
+        competition_id: e.competition_id,
+        fecha_hora: e.fecha_hora,
+        pais: e.pais,
+        region: e.region ?? null,
+        prioridad: e.prioridad,
+        estado: e.estado,
+        enviado_equipo_creativo: e.enviado_equipo_creativo,
+        source: 'import',
+        external_id: `${e.nombre_evento}__${e.fecha_hora}`,
+        notes: [],
+        history: [],
+        created_at: e.created_at,
+        updated_at: e.updated_at,
+      }))
+
+      // Deduplicar por external_id antes de upsert (evita conflictos dentro del mismo batch)
+      const seen = new Set<string>()
+      const rows = allRows.filter(r => {
+        if (seen.has(r.external_id)) return false
+        seen.add(r.external_id)
+        return true
+      })
+
+      const { error, data } = await supabase
+        .from('events')
+        .upsert(rows, { onConflict: 'external_id', ignoreDuplicates: false })
+        .select('id')
+
+      if (error) {
+        supabaseError = error.message
+      } else {
+        upserted = data?.length ?? events.length
+      }
+    }
+
     return NextResponse.json({
       success: true,
       parsed: events.length,
+      upserted: supabase ? upserted : 0,
+      supabase_enabled: !!supabase,
+      supabase_error: supabaseError,
       events,
-      message: `Se parsearon ${events.length} eventos desde la agenda`,
+      message: supabase
+        ? `${events.length} eventos parseados y guardados en Supabase`
+        : `${events.length} eventos parseados (Supabase no configurado)`,
     })
   } catch (error) {
     console.error('Sync error:', error)
@@ -62,7 +106,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET /api/sync — lista archivos disponibles y devuelve el más reciente
+// GET /api/sync — lista archivos disponibles del directorio local (solo funciona local)
 export async function GET(req: NextRequest) {
   if (!authenticate(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -72,37 +116,33 @@ export async function GET(req: NextRequest) {
   const requestedFile = searchParams.get('file')
 
   try {
-    // Si se pide un archivo específico, parsearlo
     if (requestedFile) {
       const filePath = path.join(AGENDA_DIR, requestedFile)
-      const markdown = fs.readFileSync(filePath, 'utf-8')
+      let markdown = ''
+      try {
+        markdown = fs.readFileSync(filePath, 'utf-8')
+      } catch {
+        return NextResponse.json({ error: `No se encontró el archivo: ${requestedFile}. El Auto-Sync de directorio solo funciona en local. Usa POST con { markdown: "..." } desde producción.` }, { status: 400 })
+      }
       const events = parseAgendaMarkdown(markdown)
-      return NextResponse.json({
-        success: true,
-        file: requestedFile,
-        parsed: events.length,
-        events,
-      })
+      return NextResponse.json({ success: true, file: requestedFile, parsed: events.length, events })
     }
 
-    // Sin archivo → listar los .md disponibles
     let files: string[] = []
     try {
-      files = fs.readdirSync(AGENDA_DIR)
-        .filter(f => f.endsWith('.md'))
-        .sort()
-        .reverse() // más recientes primero
+      files = fs.readdirSync(AGENDA_DIR).filter(f => f.endsWith('.md')).sort().reverse()
     } catch {
-      // directorio no existe o sin acceso
+      // directorio no accesible desde Vercel
     }
 
     return NextResponse.json({
       agenda_dir: AGENDA_DIR,
       available_files: files,
       usage: {
-        parse_file: `GET /api/sync?file=Agenda_Deportiva_12-27_Abril_2026.md`,
-        push_markdown: `POST /api/sync  { "markdown": "# Agenda Deportiva..." }`,
-        push_filepath: `POST /api/sync  { "filepath": "C:/ruta/al/archivo.md" }`,
+        parse_file: `GET /api/sync?file=Agenda_Deportiva.md`,
+        push_markdown: `POST /api/sync  { "markdown": "# Agenda..." }`,
+        push_filepath: `POST /api/sync  { "filepath": "C:/ruta/archivo.md" }`,
+        production_url: 'https://calendariogp.vercel.app/api/sync',
       },
     })
   } catch (error) {

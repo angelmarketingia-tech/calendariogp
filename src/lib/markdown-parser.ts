@@ -87,7 +87,7 @@ function mapPriority(raw: string): 'alta' | 'media' | 'baja' {
 // Parsea una línea de hora como "9:00 AM", "13:00", "5:30 PM", "Todo el día", "Variable"
 function parseHour(raw: string): { hour: number; minute: number } {
   const n = raw.trim().toLowerCase()
-  if (n === 'variable' || n === 'todo el día' || n === 'todo el dia') {
+  if (n === 'variable' || n === 'var.' || n === 'var' || n === 'todo el día' || n === 'todo el dia') {
     return { hour: 20, minute: 0 } // fallback a 8 PM
   }
   // 12-hour format: "9:00 AM", "5:30 PM"
@@ -108,32 +108,49 @@ function parseHour(raw: string): { hour: number; minute: number } {
   return { hour: 20, minute: 0 }
 }
 
-// Parsea un encabezado de fecha como "Domingo 12 de abril", "Lun 20", "Mar 21"
+// Parsea fecha en cualquier formato: "Domingo 12 de abril", "Lun 20", "18 Abr", "18 Apr", "20-23"
 function parseDateHeading(heading: string, year = 2026): Date | null {
   const months: Record<string, number> = {
+    // nombres completos
     enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5,
     julio: 6, agosto: 7, septiembre: 8, octubre: 9, noviembre: 10, diciembre: 11,
+    // abreviados español
+    ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5,
+    jul: 6, ago: 7, sep: 8, oct: 9, nov: 10, dic: 11,
+    // abreviados inglés
+    jan: 0, apr: 3, aug: 7,
   }
-  const n = heading.toLowerCase()
-  // "domingo 12 de abril"
+  const n = heading.toLowerCase().trim()
+
+  // "domingo 12 de abril" / "12 de abril"
   const fullMatch = n.match(/(\d{1,2})\s+de\s+(\w+)/)
   if (fullMatch) {
     const day = parseInt(fullMatch[1])
     const month = months[fullMatch[2]]
     if (month !== undefined) return new Date(year, month, day)
   }
+
+  // "18 abr" / "18 apr" / "18 may" — día + mes abreviado
+  const dayMonthMatch = n.match(/^(\d{1,2})\s+([a-záéíóú]{3,})/)
+  if (dayMonthMatch) {
+    const day = parseInt(dayMonthMatch[1])
+    const month = months[dayMonthMatch[2]]
+    if (month !== undefined) return new Date(year, month, day)
+  }
+
   // "lun 20", "mar 21", "sáb 25", etc.
   const shortMatch = n.match(/(?:lun|mar|mié|mie|jue|vie|sáb|sab|dom)\s+(\d{1,2})/)
   if (shortMatch) {
     const day = parseInt(shortMatch[1])
-    // Asumimos abril 2026 si no hay más contexto
-    return new Date(year, 3, day)
+    return new Date(year, 3, day) // fallback abril
   }
+
   // "20-23" rango → usamos primer día
-  const rangeMatch = n.match(/(\d{1,2})-(\d{1,2})/)
+  const rangeMatch = n.match(/^(\d{1,2})-(\d{1,2})$/)
   if (rangeMatch) {
     return new Date(year, 3, parseInt(rangeMatch[1]))
   }
+
   return null
 }
 
@@ -160,37 +177,35 @@ export function parseAgendaMarkdown(content: string): SportEvent[] {
       continue
     }
 
-    if (!currentDate) continue
-
     const cells = line.split('|').map(c => c.trim()).filter(Boolean)
 
-    // Determinar si es tabla sin fecha al inicio (columnas: hora, deporte, comp, evento, país, relevancia, motivo)
-    // o tabla con fecha (columnas: fecha, hora, deporte, comp, evento, país, relevancia, motivo)
     let hora = '', deporte = '', competicion = '', partido = '', pais = '', relevancia = ''
 
     if (cells.length >= 7) {
-      // Tabla con fecha: Fecha | Hora | Deporte | Competición | Evento | País | Relevancia | Motivo
-      // Detectamos si primera celda es fecha (contiene "lun", "mar", número)
+      // Detecta si primera celda es fecha: "18 Abr", "Lun 20", "18", "20-23"
       const firstCell = cells[0].toLowerCase()
-      const hasDateFirst = /^(lun|mar|mié|mie|jue|vie|sáb|sab|dom|\d{2}-\d{2}|\d{1,2})\b/.test(firstCell)
+      const hasDateFirst = /^(lun|mar|mié|mie|jue|vie|sáb|sab|dom|\d{2}-\d{2}|\d{1,2}\s+[a-z]|\d{1,2}\b)/.test(firstCell)
 
       if (hasDateFirst) {
-        // Actualizar fecha con la celda de fecha
         const parsedDate = parseDateHeading(cells[0])
         if (parsedDate) currentDate = parsedDate
         hora = cells[1]; deporte = cells[2]; competicion = cells[3]
         partido = cells[4]; pais = cells[5]; relevancia = cells[6]
       } else {
-        // Tabla sin fecha: Hora | Deporte | Competición | Evento | País | Relevancia | Motivo
+        // Sin fecha en columna: Hora | Deporte | Competición | Evento | País | Relevancia | Motivo
+        if (!currentDate) continue
         hora = cells[0]; deporte = cells[1]; competicion = cells[2]
         partido = cells[3]; pais = cells[4]; relevancia = cells[5]
       }
     } else if (cells.length >= 6) {
+      if (!currentDate) continue
       hora = cells[0]; deporte = cells[1]; competicion = cells[2]
       partido = cells[3]; pais = cells[4]; relevancia = cells[5]
     } else {
       continue
     }
+
+    if (!currentDate) continue
 
     // Ignorar filas vacías o sin partido
     if (!partido || partido.length < 3) continue

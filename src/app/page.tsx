@@ -5,20 +5,39 @@ import UrgentEventsPanel from '@/components/dashboard/UrgentEventsPanel'
 import SyncPanel from '@/components/dashboard/SyncPanel'
 import EventModal from '@/components/events/EventModal'
 import { useEvents } from '@/context/EventsContext'
-import { format } from 'date-fns'
+import { useAuth } from '@/context/AuthContext'
+import { format, isToday } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { RefreshCw, TrendingUp, Activity, ArrowRight } from 'lucide-react'
+import { RefreshCw, TrendingUp, Activity, ArrowRight, CalendarDays, Clock } from 'lucide-react'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { formatTime, isUrgent } from '@/lib/utils'
+
+function getGreeting(name: string) {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 12) return `¡Buenos días, ${name}! ☀️`
+  if (hour >= 12 && hour < 19) return `¡Buenas tardes, ${name}! 🌤️`
+  return `¡Buenas noches, ${name}! 🌙`
+}
 
 export default function DashboardPage() {
-  const { events, selectedEventId } = useEvents()
+  const { events, selectedEventId, selectEvent } = useEvents()
+  const { user } = useAuth()
   const [refreshing, setRefreshing] = useState(false)
 
   const handleRefresh = () => {
     setRefreshing(true)
     setTimeout(() => setRefreshing(false), 800)
   }
+
+  const todayEvents = useMemo(() =>
+    events
+      .filter(e => isToday(new Date(e.fecha_hora)))
+      .sort((a, b) => new Date(a.fecha_hora).getTime() - new Date(b.fecha_hora).getTime()),
+    [events]
+  )
+
+  const greeting = getGreeting(user?.name ?? 'equipo')
 
   return (
     <>
@@ -32,7 +51,7 @@ export default function DashboardPage() {
               <span className="text-xs font-bold text-brand uppercase tracking-widest">Panel de Control</span>
             </div>
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              ¡Buenos días! 👋
+              {greeting}
             </h1>
             <p className="text-slate-500 text-sm font-medium mt-0.5 capitalize">
               {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
@@ -76,6 +95,55 @@ export default function DashboardPage() {
           {/* Right panel */}
           <div className="space-y-5">
             <SyncPanel />
+
+            {/* Today's Events */}
+            {todayEvents.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-5 bg-emerald-400 rounded-full" />
+                  <h2 className="font-bold text-slate-800 text-sm">Eventos de Hoy</h2>
+                  <span className="ml-auto text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                    {todayEvents.length}
+                  </span>
+                </div>
+                <div className="card divide-y divide-slate-50">
+                  {todayEvents.slice(0, 5).map(event => {
+                    const urgent = isUrgent(event.fecha_hora, 24) && event.estado === 'pendiente'
+                    return (
+                      <button
+                        key={event.id}
+                        onClick={() => selectEvent(event.id)}
+                        className="w-full text-left flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors group"
+                      >
+                        <span className="text-lg flex-shrink-0">{event.sport?.icon ?? '🏅'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 truncate leading-tight">
+                            {event.nombre_evento}
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-0.5 font-medium flex items-center gap-1">
+                            <Clock size={9} />
+                            {formatTime(event.fecha_hora)}
+                            {event.competition?.name && ` · ${event.competition.name}`}
+                          </p>
+                        </div>
+                        {urgent && (
+                          <span className="flex-shrink-0 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-md font-black border border-red-200 animate-pulse">
+                            URGENTE
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                  {todayEvents.length > 5 && (
+                    <div className="px-4 py-2 text-center">
+                      <Link href="/events?urgente=24h" className="text-[11px] font-bold text-brand hover:underline">
+                        + {todayEvents.length - 5} eventos más hoy
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div>
               <div className="flex items-center gap-2 mb-3">

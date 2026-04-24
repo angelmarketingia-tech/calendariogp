@@ -5,8 +5,8 @@ import { AuthProvider } from '@/context/AuthContext'
 import AppShell from '@/components/layout/AppShell'
 
 export const metadata: Metadata = {
-  title: 'Métricas IA | SportOps Management',
-  description: 'Sistema inteligente de gestión de eventos deportivos y métricas para Meta Ads',
+  title: 'GanaPlay | Plataforma Deportiva',
+  description: 'Plataforma profesional de gestión de eventos deportivos y sincronización automática',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
