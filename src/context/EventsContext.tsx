@@ -6,12 +6,9 @@ import type { SportEvent, EventStatus, EventPriority, EventNote, EventHistoryEnt
 import { MOCK_EVENTS, MOCK_SPORTS, MOCK_COMPETITIONS, MOCK_USERS } from '@/lib/mock-data'
 import { generateId } from '@/lib/utils'
 
-// ── Supabase client (solo si está configurado) ──────────────────────
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-const supabase = SUPABASE_URL && SUPABASE_KEY
-  ? createClient(SUPABASE_URL, SUPABASE_KEY)
-  : null
+import { getSupabase } from '@/lib/supabase'
+
+const supabase = getSupabase()
 
 interface EventsState {
   events: SportEvent[]

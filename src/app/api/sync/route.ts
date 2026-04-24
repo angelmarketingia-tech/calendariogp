@@ -7,13 +7,7 @@ import path from 'path'
 const API_SECRET = process.env.API_SECRET
 const AGENDA_DIR = process.env.AGENDA_DIR ?? 'C:/Users/PC GAMER/Desktop/EeventosDepClaude'
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-function getSupabase() {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return null
-  return createClient(SUPABASE_URL, SUPABASE_KEY)
-}
+import { getSupabase } from '@/lib/supabase'
 
 function authenticate(req: NextRequest): boolean {
   if (!API_SECRET) return true
