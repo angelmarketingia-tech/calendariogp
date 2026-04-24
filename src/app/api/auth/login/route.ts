@@ -18,31 +18,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Usuario y contraseña requeridos' }, { status: 400 })
     }
 
-    const userConfig = USERS_CONFIG.find(u => u.username === username)
-    if (!userConfig) {
-      return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 401 })
+    const USERS_CREDENTIALS: Record<string, string> = {
+      'ganaplay.admin': 'ganaplay2026*',
+      'ganaplay': 'ganaplay2026*',
+      'diseño': 'ganaplay2026',
+      'diseno': 'ganaplay2026',
+      'community': 'ganaplay2026',
+      'ceo': 'ganaplay2026',
+      'director': 'ganaplay2026',
+      'fernanda': 'ganaplay2026'
     }
 
-    // Intentar obtener de variables de entorno, con fallback para evitar errores de configuración
-    const fallbackPasswords: Record<string, string> = {
-      'ADMIN_PASSWORD': 'ganaplay2026*',
-      'GANAPLAY_ADMIN_PASSWORD': 'ganaplay2026*',
-      'DESIGN_PASSWORD': 'ganaplay2026',
-      'COMMUNITY_PASSWORD': 'ganaplay2026',
-      'CEO_PASSWORD': 'ganaplay2026',
-      'DIRECTOR_PASSWORD': 'ganaplay2026',
-      'USER_PASSWORD': 'ganaplay2026'
-    }
-
-    const expectedPassword = process.env[userConfig.passwordEnv] || fallbackPasswords[userConfig.passwordEnv]
+    const expectedPassword = USERS_CREDENTIALS[username]
     
     if (!expectedPassword) {
-      console.error(`Variable de entorno ${userConfig.passwordEnv} no definida y sin fallback`)
-      return NextResponse.json({ error: 'Error de configuración del servidor' }, { status: 500 })
+      return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 401 })
     }
 
     if (password !== expectedPassword) {
       return NextResponse.json({ error: 'Contraseña incorrecta' }, { status: 401 })
+    }
+
+    // Buscar configuración de usuario para devolver los datos correctos
+    // Si es 'diseno' sin ñ, mapeamos a 'diseño' para encontrarlo en la config
+    const searchUsername = username === 'diseno' ? 'diseño' : username
+    const userConfig = USERS_CONFIG.find(u => u.username === searchUsername)
+
+    if (!userConfig) {
+      return NextResponse.json({ error: 'Error de datos de usuario' }, { status: 500 })
     }
 
     return NextResponse.json({
